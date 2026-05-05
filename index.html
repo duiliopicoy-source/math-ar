@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>MathXR — Solucionador AR</title>
+
+  <!-- A-Frame + AR.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/aframe/1.5.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    /* ── HUD Overlay ── */
+    #hud {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    /* Score strip */
+    #score-bar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, transparent 100%);
+    }
+
+    .score-label {
+      font-size: 11px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #00ffe7;
+      opacity: 0.7;
+    }
+
+    #score-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #00ffe7;
+      text-shadow: 0 0 16px #00ffe7, 0 0 32px #00ffe7aa;
+      letter-spacing: 2px;
+    }
+
+    #streak-value {
+      font-size: 14px;
+      color: #ff6af0;
+      text-shadow: 0 0 10px #ff6af0;
+      letter-spacing: 2px;
+    }
+
+    /* Level badge */
+    #level-badge {
+      position: absolute;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 16px;
+      border: 1px solid #00ffe744;
+      border-radius: 20px;
+      background: rgba(0, 255, 231, 0.06);
+      font-size: 10px;
+      letter-spacing: 4px;
+      color: #00ffe7aa;
+      text-transform: uppercase;
+    }
+
+    /* Feedback toast */
+    #feedback-toast {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      padding: 16px 40px;
+      border-radius: 12px;
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    #feedback-toast.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    #feedback-toast.correct {
+      background: rgba(0, 255, 120, 0.15);
+      border: 2px solid #00ff78;
+      color: #00ff78;
+      text-shadow: 0 0 20px #00ff78;
+      box-shadow: 0 0 40px #00ff7840;
+    }
+
+    #feedback-toast.wrong {
+      background: rgba(255, 60, 80, 0.15);
+      border: 2px solid #ff3c50;
+      color: #ff3c50;
+      text-shadow: 0 0 20px #ff3c50;
+      box-shadow: 0 0 40px #ff3c5040;
+    }
+
+    /* Bottom instructions */
+    #bottom-bar {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 16px 20px;
+      background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, transparent 100%);
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: #ffffff44;
+      text-transform: uppercase;
+    }
+
+    /* Intro screen */
+    #intro-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 32px;
+    }
+
+    .intro-glow {
+      font-size: 48px;
+      font-weight: 900;
+      color: #00ffe7;
+      text-shadow: 0 0 30px #00ffe7, 0 0 60px #00ffe7aa;
+      letter-spacing: 6px;
+      animation: pulse-glow 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { text-shadow: 0 0 30px #00ffe7, 0 0 60px #00ffe7aa; }
+      50% { text-shadow: 0 0 60px #00ffe7, 0 0 120px #00ffe7; }
+    }
+
+    .intro-sub {
+      font-size: 13px;
+      color: #ffffff66;
+      letter-spacing: 3px;
+      text-align: center;
+      line-height: 1.8;
+      max-width: 300px;
+    }
+
+    .intro-line {
+      width: 80px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #00ffe7, transparent);
+    }
+
+    .start-btn {
+      pointer-events: all;
+      cursor: pointer;
+      margin-top: 16px;
+      padding: 16px 48px;
+      background: transparent;
+      border: 2px solid #00ffe7;
+      border-radius: 8px;
+      color: #00ffe7;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      transition: all 0.3s;
+      box-shadow: 0 0 20px #00ffe740;
+    }
+
+    .start-btn:hover, .start-btn:active {
+      background: #00ffe720;
+      box-shadow: 0 0 40px #00ffe780;
+      transform: scale(1.04);
+    }
+
+    /* Scanline effect */
+    #intro-screen::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 255, 231, 0.02) 2px,
+        rgba(0, 255, 231, 0.02) 4px
+      );
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ INTRO SCREEN ═══ -->
+<div id="intro-screen">
+  <div class="intro-glow">MATH XR</div>
+  <div class="intro-line"></div>
+  <div class="intro-sub">
+    Sistema de ecuaciones en<br>
+    Realidad Aumentada<br>
+    <br>
+    Apunta tu cámara a una<br>
+    superficie plana iluminada
+  </div>
+  <button class="start-btn" onclick="startAR()">INICIAR AR</button>
+</div>
+
+<!-- ═══════════════════════════════════════ HUD ═══ -->
+<div id="hud" style="display:none">
+  <div id="score-bar">
+    <div>
+      <div class="score-label">Puntos</div>
+      <div id="score-value">000</div>
+    </div>
+    <div style="text-align:center">
+      <div class="score-label">Racha</div>
+      <div id="streak-value">🔥 ×0</div>
+    </div>
+    <div style="text-align:right">
+      <div class="score-label">Nivel</div>
+      <div id="level-display" style="font-size:28px;font-weight:700;color:#ff6af0;text-shadow:0 0 16px #ff6af0">1</div>
+    </div>
+  </div>
+  <div id="level-badge">Álgebra Básica</div>
+  <div id="feedback-toast">¡CORRECTO!</div>
+  <div id="bottom-bar">Toca la esfera con la respuesta correcta</div>
+</div>
+
+<!-- ═══════════════════════════════════════ A-FRAME SCENE ═══ -->
+<a-scene
+  id="ar-scene"
+  embedded
+  arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix;"
+  renderer="logarithmicDepthBuffer: true; colorManagement: true;"
+  vr-mode-ui="enabled: false"
+  style="display:none; width:100%; height:100vh; position:fixed; top:0; left:0; z-index:1;"
+>
+
+  <a-assets>
+    <!-- Inline SVG font panel texture will be drawn via canvas -->
+  </a-assets>
+
+  <!-- Camera -->
+  <a-entity camera look-controls="enabled:false"></a-entity>
+
+  <!-- ── Main equation panel ── -->
+  <a-entity id="math-panel" position="0 0.5 -2" look-at="[camera]">
+
+    <!-- Panel backing -->
+    <a-rounded
+      id="panel-bg"
+      width="2.2" height="0.85"
+      radius="0.06"
+      color="#001a2e"
+      opacity="0.92"
+      position="0 0 -0.01"
+    ></a-rounded>
+
+    <!-- Hologram border glow (thin frame) -->
+    <a-rounded
+      id="panel-border"
+      width="2.24" height="0.89"
+      radius="0.07"
+      color="#00ffe7"
+      opacity="0.25"
+      position="0 0 -0.02"
+    ></a-rounded>
+
+    <!-- Equation text -->
+    <a-text
+      id="equation-text"
+      value="Cargando..."
+      align="center"
+      color="#e0fffc"
+      width="2"
+      font="https://cdn.aframe.io/fonts/Exo2Bold.fnt"
+      position="0 0.12 0.01"
+      scale="1.1 1.1 1.1"
+    ></a-text>
+
+    <!-- Solve label -->
+    <a-text
+      value="RESUELVE PARA  X"
+      align="center"
+      color="#00ffe744"
+      width="1.6"
+      position="0 -0.2 0.01"
+      scale="0.55 0.55 0.55"
+      letter-spacing="6"
+    ></a-text>
+
+    <!-- Decorative scan line -->
+    <a-plane
+      width="2.18" height="0.004"
+      color="#00ffe7" opacity="0.4"
+      position="0 -0.08 0.005"
+    ></a-plane>
+
+  </a-entity>
+
+  <!-- ── Answer buttons (spheres) ── -->
+  <!-- Button A -->
+  <a-entity id="btn-a" position="-0.85 -0.25 -2" look-at="[camera]">
+    <a-sphere
+      id="sphere-a"
+      radius="0.25"
+      color="#001a2e"
+      opacity="0.9"
+      class="answer-sphere"
+    ></a-sphere>
+    <!-- Glow ring -->
+    <a-torus
+      radius="0.27" radius-tubular="0.012"
+      color="#00ffe7" opacity="0.6"
+      rotation="0 0 0"
+    ></a-torus>
+    <a-text
+      id="text-a"
+      value="?"
+      align="center"
+      color="#e0fffc"
+      width="0.9"
+      position="0 0 0.26"
+      font="https://cdn.aframe.io/fonts/Exo2Bold.fnt"
+    ></a-text>
+  </a-entity>
+
+  <!-- Button B -->
+  <a-entity id="btn-b" position="0 -0.25 -2" look-at="[camera]">
+    <a-sphere
+      id="sphere-b"
+      radius="0.25"
+      color="#001a2e"
+      opacity="0.9"
+      class="answer-sphere"
+    ></a-sphere>
+    <a-torus
+      radius="0.27" radius-tubular="0.012"
+      color="#ff6af0" opacity="0.6"
+      rotation="0 0 0"
+    ></a-torus>
+    <a-text
+      id="text-b"
+      value="?"
+      align="center"
+      color="#e0fffc"
+      width="0.9"
+      position="0 0 0.26"
+      font="https://cdn.aframe.io/fonts/Exo2Bold.fnt"
+    ></a-text>
+  </a-entity>
+
+  <!-- Button C -->
+  <a-entity id="btn-c" position="0.85 -0.25 -2" look-at="[camera]">
+    <a-sphere
+      id="sphere-c"
+      radius="0.25"
+      color="#001a2e"
+      opacity="0.9"
+      class="answer-sphere"
+    ></a-sphere>
+    <a-torus
+      radius="0.27" radius-tubular="0.012"
+      color="#7b61ff" opacity="0.6"
+      rotation="0 0 0"
+    ></a-torus>
+    <a-text
+      id="text-c"
+      value="?"
+      align="center"
+      color="#e0fffc"
+      width="0.9"
+      position="0 0 0.26"
+      font="https://cdn.aframe.io/fonts/Exo2Bold.fnt"
+    ></a-text>
+  </a-entity>
+
+  <!-- Ambient particles (floating dots) -->
+  <a-entity id="particles">
+    <!-- Generated by JS -->
+  </a-entity>
+
+</a-scene>
+
+<!-- ═══════════════════════════════════════ JAVASCRIPT ═══ -->
+<script>
+// ── State ──────────────────────────────────────────────────
+const state = {
+  score: 0,
+  streak: 0,
+  level: 1,
+  correctAnswer: null,
+  correctButton: null,
+  locked: false,
+  answered: 0
+};
+
+// ── Level config ───────────────────────────────────────────
+const levels = [
+  { name: 'ÁLGEBRA BÁSICA',  minA: 1, maxA: 5,  minB: 1, maxB: 10, minC: 5,  maxC: 20 },
+  { name: 'INTERMEDIO',      minA: 2, maxA: 8,  minB: 1, maxB: 15, minC: 10, maxC: 30 },
+  { name: 'AVANZADO',        minA: 3, maxA: 12, minB: 2, maxB: 20, minC: 15, maxC: 50 },
+  { name: 'EXPERTO',         minA: 5, maxA: 15, minB: 5, maxB: 30, minC: 20, maxC: 80 },
+];
+
+function currentLevel() {
+  return levels[Math.min(state.level - 1, levels.length - 1)];
+}
+
+// ── Random helpers ─────────────────────────────────────────
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// ── Exercise generator ─────────────────────────────────────
+// Generates: ax + b = c  →  x = (c - b) / a
+function generateExercise() {
+  const cfg = currentLevel();
+  const a = randInt(cfg.minA, cfg.maxA);
+  const x = randInt(1, 10); // the real answer
+  const b = randInt(cfg.minB, cfg.maxB);
+  const c = a * x + b;
+
+  const equation = `${a}x + ${b} = ${c}`;
+  const answer = x;
+
+  // Generate two unique distractors
+  const distractors = new Set();
+  while (distractors.size < 2) {
+    let d = answer + randInt(-5, 5);
+    if (d !== answer && d > 0) distractors.add(d);
+  }
+
+  const options = shuffle([answer, ...distractors]);
+
+  return { equation, answer, options };
+}
+
+// ── Sphere colors ──────────────────────────────────────────
+const SPHERE_COLORS = {
+  idle:    { a: '#001a2e', b: '#001a2e', c: '#001a2e' },
+  correct: '#00ff78',
+  wrong:   '#ff3c50'
+};
+
+const TORUS_COLORS = { a: '#00ffe7', b: '#ff6af0', c: '#7b61ff' };
+
+function resetSphereColors() {
+  ['a', 'b', 'c'].forEach(id => {
+    const sphere = document.getElementById(`sphere-${id}`);
+    if (sphere) sphere.setAttribute('color', '#001a2e');
+    sphere && sphere.setAttribute('emissive', '#000000');
+    sphere && sphere.setAttribute('emissiveIntensity', '0');
+  });
+}
+
+// ── Load exercise into scene ───────────────────────────────
+function loadExercise() {
+  const ex = generateExercise();
+  state.correctAnswer = ex.answer;
+  state.locked = false;
+  resetSphereColors();
+
+  // Set equation text
+  document.getElementById('equation-text').setAttribute('value', ex.equation);
+
+  // Map options to buttons
+  const ids = ['a', 'b', 'c'];
+  ids.forEach((id, i) => {
+    document.getElementById(`text-${id}`).setAttribute('value', String(ex.options[i]));
+    if (ex.options[i] === ex.answer) {
+      state.correctButton = id;
+    }
+  });
+}
+
+// ── Handle tap on answer sphere ────────────────────────────
+function onAnswerTap(buttonId) {
+  if (state.locked) return;
+
+  const textEl = document.getElementById(`text-${buttonId}`);
+  const chosenValue = parseInt(textEl.getAttribute('value'));
+  const sphere = document.getElementById(`sphere-${buttonId}`);
+
+  if (chosenValue === state.correctAnswer) {
+    // ✅ Correct
+    state.locked = true;
+    state.score += 10 * state.level * (state.streak + 1);
+    state.streak++;
+    state.answered++;
+
+    // Level up every 5 correct
+    if (state.answered % 5 === 0) {
+      state.level = Math.min(state.level + 1, levels.length);
+    }
+
+    sphere.setAttribute('color', SPHERE_COLORS.correct);
+    sphere.setAttribute('emissive', SPHERE_COLORS.correct);
+    sphere.setAttribute('emissiveIntensity', '0.8');
+
+    // Panel glow green
+    document.getElementById('panel-border').setAttribute('color', '#00ff78');
+    document.getElementById('panel-border').setAttribute('opacity', '0.7');
+
+    showToast('¡CORRECTO!', 'correct');
+    updateHUD();
+
+    // Celebratory animation
+    animateScale(sphere, 1.0, 1.35, 180, () => {
+      animateScale(sphere, 1.35, 1.0, 200);
+    });
+
+    setTimeout(() => {
+      document.getElementById('panel-border').setAttribute('color', '#00ffe7');
+      document.getElementById('panel-border').setAttribute('opacity', '0.25');
+      loadExercise();
+    }, 1600);
+
+  } else {
+    // ❌ Wrong
+    state.streak = 0;
+    sphere.setAttribute('color', SPHERE_COLORS.wrong);
+    sphere.setAttribute('emissive', SPHERE_COLORS.wrong);
+    sphere.setAttribute('emissiveIntensity', '0.6');
+
+    showToast('INCORRECTO', 'wrong');
+    updateHUD();
+
+    // Shake effect via position wobble
+    shakeEntity(document.getElementById(`btn-${buttonId}`));
+
+    setTimeout(() => {
+      sphere.setAttribute('color', '#001a2e');
+      sphere.setAttribute('emissive', '#000000');
+      sphere.setAttribute('emissiveIntensity', '0');
+    }, 1200);
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────
+function animateScale(el, from, to, duration, cb) {
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const s = from + (to - from) * t;
+    el.setAttribute('scale', `${s} ${s} ${s}`);
+    if (t < 1) requestAnimationFrame(step);
+    else cb && cb();
+  }
+  requestAnimationFrame(step);
+}
+
+function shakeEntity(el) {
+  const origPos = el.getAttribute('position');
+  const ox = origPos.x;
+  let i = 0;
+  const frames = [0.06, -0.06, 0.04, -0.04, 0.02, -0.02, 0];
+  const interval = setInterval(() => {
+    if (i >= frames.length) { clearInterval(interval); return; }
+    el.setAttribute('position', { x: ox + frames[i], y: origPos.y, z: origPos.z });
+    i++;
+  }, 60);
+}
+
+function showToast(msg, type) {
+  const toast = document.getElementById('feedback-toast');
+  toast.textContent = msg;
+  toast.className = `show ${type}`;
+  setTimeout(() => { toast.className = ''; }, 1400);
+}
+
+function updateHUD() {
+  const scoreEl = document.getElementById('score-value');
+  scoreEl.textContent = String(state.score).padStart(3, '0');
+
+  document.getElementById('streak-value').textContent = `🔥 ×${state.streak}`;
+  document.getElementById('level-display').textContent = state.level;
+  document.getElementById('level-badge').textContent = currentLevel().name;
+}
+
+// ── Floating ambient particles ─────────────────────────────
+function spawnParticles() {
+  const container = document.getElementById('particles');
+  for (let i = 0; i < 12; i++) {
+    const dot = document.createElement('a-sphere');
+    dot.setAttribute('radius', (Math.random() * 0.015 + 0.005).toFixed(3));
+    dot.setAttribute('color', ['#00ffe7', '#ff6af0', '#7b61ff'][Math.floor(Math.random() * 3)]);
+    dot.setAttribute('opacity', (Math.random() * 0.5 + 0.2).toFixed(2));
+    const x = (Math.random() - 0.5) * 4;
+    const y = (Math.random() - 0.5) * 2;
+    const z = -2 + (Math.random() - 0.5) * 2;
+    dot.setAttribute('position', `${x} ${y} ${z}`);
+    dot.setAttribute('animation', `property: position; to: ${x} ${y + 0.4 + Math.random() * 0.3} ${z}; dur: ${2000 + Math.random() * 2000}; easing: easeInOutSine; loop: true; dir: alternate`);
+    container.appendChild(dot);
+  }
+}
+
+// ── Click / touch handling for spheres ────────────────────
+function attachSphereListeners() {
+  ['a', 'b', 'c'].forEach(id => {
+    const entity = document.getElementById(`btn-${id}`);
+    if (!entity) return;
+
+    // A-Frame cursor event (desktop/gaze)
+    entity.addEventListener('click', () => onAnswerTap(id));
+
+    // Touch events (mobile AR)
+    entity.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      onAnswerTap(id);
+    }, { passive: false });
+  });
+}
+
+// ── Raycaster-based tap detection for mobile ───────────────
+// A-Frame's built-in cursor handles it when we add cursor to camera
+function patchCameraWithCursor() {
+  const camera = document.querySelector('[camera]');
+  if (!camera) return;
+  camera.setAttribute('cursor', 'fuse: false; rayOrigin: mouse');
+  camera.setAttribute('raycaster', 'objects: .answer-sphere; far: 10');
+}
+
+// ── Start AR ───────────────────────────────────────────────
+function startAR() {
+  document.getElementById('intro-screen').style.display = 'none';
+  document.getElementById('hud').style.display = 'block';
+  document.getElementById('ar-scene').style.display = 'block';
+
+  const scene = document.getElementById('ar-scene');
+
+  if (scene.hasLoaded) {
+    init();
+  } else {
+    scene.addEventListener('loaded', init, { once: true });
+  }
+}
+
+function init() {
+  patchCameraWithCursor();
+  spawnParticles();
+  loadExercise();
+  attachSphereListeners();
+  updateHUD();
+
+  // Idle pulse on panel border
+  setInterval(() => {
+    const border = document.getElementById('panel-border');
+    if (!border) return;
+    const op = parseFloat(border.getAttribute('opacity'));
+    border.setAttribute('animation__pulse',
+      `property: opacity; from: ${op}; to: ${op < 0.3 ? 0.5 : 0.15}; dur: 2000; easing: easeInOutSine; loop: true; dir: alternate`
+    );
+  }, 500);
+}
+
+// ── Fallback: tap anywhere on canvas if sphere not hit ────
+document.addEventListener('DOMContentLoaded', () => {
+  // Expose tap handler to A-Frame registered events via data attributes
+});
+</script>
+
+</body>
+</html>
