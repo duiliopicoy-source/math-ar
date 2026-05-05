@@ -1,264 +1,435 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>AR Álgebra · MindAR</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>AR Álgebra</title>
 
-  <!--
-    STACK:
-      A-Frame  1.2.0  (base 3D/WebGL)
-      MindAR   1.2.5  (image tracking por software, muy estable en Android)
-
-    ORDEN OBLIGATORIO: A-Frame primero, MindAR después.
-  -->
+  <!-- ORDEN CRÍTICO: A-Frame primero, MindAR después -->
   <script src="https://cdn.jsdelivr.net/npm/aframe@1.2.0/dist/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
-    /* ── Reset limpio. Sin filtros ni capas sobre el video. ── */
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700&display=swap');
+
+    :root {
+      --g:    #00ff88;
+      --gdim: #00cc55;
+      --gbg:  rgba(0,255,136,0.08);
+      --dark: rgba(4,18,10,0.90);
+      --panel:rgba(6,22,12,0.93);
+      --gold: #ffd700;
+    }
+
     *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 
     html, body {
       width:100%; height:100%;
-      background:#000;
-      font-family:'Courier New', Courier, monospace;
       overflow:hidden;
-      color:#00ff88;
+      background:transparent;   /* NUNCA negro — bloquea el video */
+      font-family:'Share Tech Mono', 'Courier New', monospace;
+      color:var(--g);
     }
 
-    /* A-Frame necesita el canvas libre */
+    /* ── VIDEO de cámara (inyectado por MindAR) ─────────────────────────
+       z-index:-1 → debajo del canvas WebGL y de la UI HTML.
+       !important en todo porque MindAR puede sobreescribir estilos.      */
+    video {
+      position: absolute !important;
+      top:  0 !important;  left: 0 !important;
+      width:  100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      z-index: -1 !important;
+      display: block !important;
+      background: transparent !important;
+    }
+
+    /* ── CANVAS WebGL (A-Frame) ─────────────────────────────────────────
+       Fondo transparente para que el video se vea a través.             */
+    canvas {
+      position: absolute !important;
+      top: 0 !important;  left: 0 !important;
+      width:  100% !important;
+      height: 100% !important;
+      z-index: 0 !important;
+      background: transparent !important;
+    }
+
+    /* ── A-SCENE ────────────────────────────────────────────────────── */
     a-scene {
-      position:fixed !important;
-      inset:0;
-      width:100% !important;
-      height:100% !important;
-      z-index:0;
+      position: fixed !important;
+      inset: 0;
+      width:  100% !important;
+      height: 100% !important;
+      z-index: 0;
+      background: transparent !important;
     }
     .a-enter-vr, .a-loader-title { display:none !important; }
 
-    /* ════════════════════════════════
-       SPLASH / DIAGNÓSTICO DE CÁMARA
-    ════════════════════════════════ */
+    /* ════════════════════════════════════════════════════
+       SPLASH — cubre todo durante el boot de la cámara
+    ════════════════════════════════════════════════════ */
     #splash {
-      position:fixed; inset:0; z-index:900;
-      background:#000d00;
+      position:fixed; inset:0; z-index:800;
+      background:#000d06;
       display:flex; flex-direction:column;
       justify-content:center; align-items:center;
-      gap:18px; padding:28px; text-align:center;
+      gap:20px; padding:28px; text-align:center;
     }
-
     #splash-icon {
-      font-size:48px;
-      animation: spin 1.4s linear infinite;
+      font-size:46px;
+      animation:spin 1.3s linear infinite;
       display:inline-block;
     }
     @keyframes spin { to { transform:rotate(360deg); } }
 
-    #splash-title {
-      font-size:11px; letter-spacing:4px; color:#00cc55;
-    }
+    #splash-label { font-size:11px; letter-spacing:4px; color:var(--gdim); }
+    #splash-status { font-size:13px; letter-spacing:1px; line-height:1.7; max-width:320px; }
 
-    #splash-status {
-      font-size:14px; letter-spacing:1px; line-height:1.6;
-      max-width:340px;
-    }
-
-    /* Caja de error — se llena con el mensaje exacto del sistema */
-    #error-box {
-      display:none;
-      background:#0a0000;
-      border:1px solid #ff3355;
-      color:#ff3355;
-      font-size:12px;
-      letter-spacing:1px;
-      line-height:1.7;
-      padding:14px 16px;
-      border-radius:3px;
-      max-width:360px;
-      width:100%;
-      text-align:left;
-      word-break:break-all;
-    }
-
-    #retry-btn {
+    /* Botón manual "Iniciar Cámara" — aparece si autoplay falla */
+    #cam-btn {
       display:none;
       background:transparent;
-      border:1px solid #00ff88;
-      color:#00ff88;
-      font-family:'Courier New', Courier, monospace;
-      font-size:13px; letter-spacing:3px;
-      padding:11px 26px;
-      cursor:pointer;
+      border:1px solid var(--g);
+      color:var(--g);
+      font-family:inherit; font-size:14px;
+      letter-spacing:3px; padding:13px 30px;
+      cursor:pointer; border-radius:6px;
+      touch-action:manipulation;
+      box-shadow:0 0 14px rgba(0,255,136,.25);
+    }
+    #cam-btn:active { background:rgba(0,255,136,.1); }
+
+    /* Bloque de diagnóstico de error */
+    #err-box {
+      display:none;
+      background:#0b0002; border:1px solid #ff3355;
+      color:#ff3355; font-size:11px; line-height:1.8;
+      padding:12px 14px; border-radius:4px;
+      max-width:340px; width:100%;
+      text-align:left; word-break:break-all;
+    }
+    #retry-btn {
+      display:none;
+      background:transparent; border:1px solid #ff3355;
+      color:#ff3355; font-family:inherit;
+      font-size:12px; letter-spacing:2px;
+      padding:10px 22px; cursor:pointer;
       touch-action:manipulation;
     }
 
-    /* ════════════════════════════════
-       HUD
-    ════════════════════════════════ */
+    /* ════════════════════════════════════════════════════
+       HUD SUPERIOR — Puntos · barra de progreso · Racha
+    ════════════════════════════════════════════════════ */
     #hud {
-      position:fixed; top:0; left:0; right:0;
-      height:44px;
-      background:rgba(0,10,0,0.82);
-      border-bottom:1px solid #00cc55;
+      display:none;              /* oculto hasta que la cámara arranque */
+      position:fixed;
+      top:0; left:0; right:0;
+      padding:10px 16px 8px;
+      background:rgba(0,8,4,0.72);
+      border-bottom:1px solid rgba(0,255,136,.2);
+      z-index:100;
+    }
+
+    /* Fila superior: PUNTOS — dots — RACHA */
+    .hud-row {
       display:flex; align-items:center;
       justify-content:space-between;
-      padding:0 14px;
-      z-index:100;
-      /* Sin backdrop-filter: causa bug de compositing en Xiaomi HyperOS */
-    }
-    #hud span { font-size:13px; letter-spacing:2px; color:#00ff88; }
-
-    /* ════════════════════════════════
-       HINT
-    ════════════════════════════════ */
-    #hint {
-      position:fixed; bottom:0; left:0; right:0;
-      padding:15px;
-      background:rgba(0,10,0,0.82);
-      border-top:1px solid #00cc55;
-      color:#00cc55; font-size:13px;
-      letter-spacing:1px; text-align:center;
-      z-index:100;
+      gap:10px;
     }
 
-    /* ════════════════════════════════
-       PANEL EJERCICIO
-    ════════════════════════════════ */
-    #panel {
-      display:none;
-      position:fixed; bottom:0; left:0; right:0;
-      background:rgba(0,10,0,0.90);
-      border-top:1px solid #00ff88;
-      padding:12px 14px 22px;
-      z-index:100;
+    .hud-col { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+    .hud-col.right { align-items:flex-end; }
+
+    .hud-label {
+      font-size:9px; letter-spacing:3px; color:var(--gdim);
     }
 
-    #question {
-      font-size:15px; color:#00ff88;
-      margin-bottom:11px; line-height:1.45;
+    /* Dígitos con borde estilo pixel-display */
+    #pts-display {
+      display:flex; gap:4px;
     }
+    .digit {
+      width:26px; height:26px;
+      border:2px solid var(--g);
+      border-radius:3px;
+      display:flex; align-items:center; justify-content:center;
+      font-family:'Orbitron', monospace;
+      font-size:13px; color:var(--g);
+      box-shadow:0 0 6px rgba(0,255,136,.4), inset 0 0 4px rgba(0,255,136,.1);
+      transition:background .2s;
+    }
+    .digit.lit { background:rgba(0,255,136,.18); }
 
-    #feedback {
-      font-size:13px; min-height:20px;
-      margin-bottom:10px; letter-spacing:1px;
-    }
-    #feedback.ok  { color:#00ffcc; }
-    #feedback.err { color:#ff3355; }
-
-    /* Botones HTML nativos — sin z-index alto, sin event-delegation */
-    #options {
-      display:grid; grid-template-columns:1fr 1fr; gap:8px;
-    }
-    #options button {
-      background:rgba(0,255,136,0.07);
-      border:1px solid #00aa44;
-      color:#00ff88;
-      font-family:'Courier New', Courier, monospace;
-      font-size:15px; padding:13px 6px;
-      border-radius:3px; cursor:pointer;
+    /* Racha — en dorado */
+    #streak-display {
+      font-family:'Orbitron', monospace;
+      font-size:20px; color:var(--gold);
       letter-spacing:1px;
+      text-shadow:0 0 10px rgba(255,215,0,.5);
+    }
+    #streak-display span { font-size:13px; }
+
+    /* Barra de puntos (10 dots) */
+    #dots {
+      display:flex; gap:5px; align-items:center;
+      flex:1; justify-content:center;
+    }
+    .dot {
+      width:9px; height:9px; border-radius:50%;
+      border:1.5px solid rgba(0,255,136,.4);
+      background:transparent;
+      transition:background .3s, border-color .3s;
+    }
+    .dot.done  { background:var(--g);   border-color:var(--g); }
+    .dot.active{ background:var(--gdim);border-color:var(--gdim);
+                 box-shadow:0 0 6px var(--gdim); }
+
+    /* ════════════════════════════════════════════════════
+       PANEL CENTRAL — tarjeta del ejercicio
+    ════════════════════════════════════════════════════ */
+    #card {
+      display:none;
+      position:fixed;
+      /* Centrado vertical: justo arriba de los botones */
+      left:16px; right:16px;
+      top:50%; transform:translateY(-54%);
+      background:var(--panel);
+      border:1px solid rgba(0,255,136,.35);
+      border-radius:16px;
+      padding:18px 20px 20px;
+      z-index:100;
+      /* Esquinas brillantes */
+      box-shadow:
+        0 0 0 1px rgba(0,255,136,.08),
+        0 4px 40px rgba(0,0,0,.6),
+        inset 0 0 60px rgba(0,255,136,.03);
+    }
+
+    /* Esquina decorativa top-left */
+    #card::before {
+      content:'';
+      position:absolute; top:-1px; left:-1px;
+      width:20px; height:20px;
+      border-top:2px solid var(--g);
+      border-left:2px solid var(--g);
+      border-radius:16px 0 0 0;
+    }
+
+    .card-meta {
+      display:flex; justify-content:space-between;
+      align-items:center; margin-bottom:14px;
+    }
+    .card-tag {
+      font-size:10px; letter-spacing:3px; color:var(--gdim);
+    }
+    .card-num {
+      font-family:'Orbitron', monospace;
+      font-size:11px; color:rgba(0,255,136,.5);
+      letter-spacing:1px;
+    }
+
+    #equation {
+      font-family:'Orbitron', monospace;
+      font-size:clamp(26px,7vw,36px);
+      color:var(--g);
+      text-align:center;
+      letter-spacing:2px;
+      margin:4px 0 14px;
+      text-shadow:0 0 20px rgba(0,255,136,.4);
+    }
+
+    .card-sub {
+      font-size:10px; letter-spacing:4px;
+      color:rgba(0,255,136,.45);
+      text-align:center;
+      border-top:1px solid rgba(0,255,136,.1);
+      padding-top:12px;
+      margin-top:2px;
+    }
+
+    /* Feedback inline dentro de la card */
+    #feedback {
+      text-align:center; font-size:13px;
+      min-height:18px; margin-top:10px;
+      letter-spacing:2px;
+    }
+    #feedback.ok  { color:#00ffcc; text-shadow:0 0 8px #00ffcc; }
+    #feedback.err { color:#ff3355; text-shadow:0 0 8px #ff3355; }
+
+    /* ════════════════════════════════════════════════════
+       BOTONES A / B / C
+    ════════════════════════════════════════════════════ */
+    #answers {
+      display:none;
+      position:fixed;
+      left:16px; right:16px; bottom:24px;
+      display:none;
+      flex-direction:column;
+      gap:10px;
+      z-index:100;
+    }
+
+    .ans-btn {
+      display:flex; align-items:center;
+      gap:16px;
+      background:rgba(6,28,16,0.88);
+      border:1px solid rgba(0,255,136,.30);
+      border-radius:12px;
+      padding:16px 20px;
+      cursor:pointer;
       touch-action:manipulation;
       -webkit-tap-highlight-color:transparent;
+      transition:border-color .15s, background .15s, box-shadow .15s, transform .1s;
+      /* Glow suave */
+      box-shadow:0 2px 16px rgba(0,0,0,.4), inset 0 0 30px rgba(0,255,136,.02);
     }
-    #options button.ok  { border-color:#00ffcc; color:#00ffcc; background:rgba(0,255,200,.15); }
-    #options button.err { border-color:#ff3355; color:#ff3355; background:rgba(255,50,80,.12); }
+    .ans-btn:active { transform:scale(.97); }
+    .ans-btn:focus  { outline:none; }
 
-    /* ════════════════════════════════
-       FIN
-    ════════════════════════════════ */
+    .btn-letter {
+      font-family:'Orbitron', monospace;
+      font-size:11px; color:var(--gdim);
+      width:18px; flex-shrink:0;
+      letter-spacing:1px;
+    }
+
+    .btn-value {
+      font-family:'Orbitron', monospace;
+      font-size:22px; color:var(--g);
+      letter-spacing:1px;
+    }
+
+    /* Estados de respuesta */
+    .ans-btn.ok {
+      border-color:#00ffcc;
+      background:rgba(0,255,200,.12);
+      box-shadow:0 0 20px rgba(0,255,200,.3);
+    }
+    .ans-btn.ok .btn-letter,
+    .ans-btn.ok .btn-value { color:#00ffcc; }
+
+    .ans-btn.err {
+      border-color:#ff3355;
+      background:rgba(255,50,80,.10);
+      box-shadow:0 0 14px rgba(255,50,80,.3);
+    }
+    .ans-btn.err .btn-letter,
+    .ans-btn.err .btn-value { color:#ff3355; }
+
+    /* ════════════════════════════════════════════════════
+       HINT — "apunta a la imagen"
+    ════════════════════════════════════════════════════ */
+    #hint {
+      display:none;
+      position:fixed; bottom:0; left:0; right:0;
+      padding:16px;
+      background:rgba(0,10,4,0.80);
+      border-top:1px solid rgba(0,255,136,.2);
+      color:var(--gdim); font-size:12px;
+      letter-spacing:2px; text-align:center;
+      z-index:100;
+      animation:blink 2s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ════════════════════════════════════════════════════
+       PANTALLA FINAL
+    ════════════════════════════════════════════════════ */
     #endscreen {
       display:none; position:fixed; inset:0;
-      background:rgba(0,8,0,0.96);
+      background:rgba(0,8,3,0.97);
       flex-direction:column; justify-content:center;
-      align-items:center; gap:16px;
-      text-align:center; z-index:200; padding:30px;
+      align-items:center; gap:18px;
+      text-align:center; z-index:300; padding:32px;
     }
     #endscreen.show { display:flex; }
-    #endscreen h2 { font-size:26px; letter-spacing:4px; }
-    #endscreen p  { font-size:14px; color:#00aa44; letter-spacing:2px; }
-    #endscreen button {
-      margin-top:14px; background:transparent;
-      border:1px solid #00ff88; color:#00ff88;
-      font-family:'Courier New', Courier, monospace;
-      font-size:14px; padding:12px 28px;
-      letter-spacing:3px; cursor:pointer;
-      touch-action:manipulation;
+    #endscreen h2 {
+      font-family:'Orbitron', monospace;
+      font-size:clamp(22px,6vw,36px);
+      letter-spacing:4px;
+      text-shadow:0 0 20px var(--g);
     }
-
-    /* ════════════════════════════════
-       INFO IMAGEN DE SEGUIMIENTO
-    ════════════════════════════════ */
-    #img-info {
-      position:fixed; top:48px; left:0; right:0;
-      padding:8px 14px;
-      background:rgba(0,10,0,0.70);
-      border-bottom:1px solid #004422;
-      font-size:11px; color:#00884a;
-      letter-spacing:1px; text-align:center;
-      z-index:100;
+    #endscreen p { font-size:14px; color:var(--gdim); letter-spacing:2px; }
+    #endscreen button {
+      margin-top:10px; background:transparent;
+      border:1px solid var(--g); color:var(--g);
+      font-family:inherit; font-size:13px;
+      letter-spacing:3px; padding:13px 30px;
+      cursor:pointer; border-radius:8px;
+      touch-action:manipulation;
+      box-shadow:0 0 14px rgba(0,255,136,.2);
     }
   </style>
 </head>
 <body>
 
-  <!-- ════ SPLASH DE ARRANQUE ════ -->
+  <!-- ══════ SPLASH ══════ -->
   <div id="splash">
     <div id="splash-icon">⬡</div>
-    <div id="splash-title">INICIALIZANDO AR ALGEBRA</div>
-    <div id="splash-status">Solicitando acceso a cámara...</div>
-    <div id="error-box"></div>
+    <div id="splash-label">AR ÁLGEBRA · BOOT</div>
+    <div id="splash-status">Iniciando sistema...</div>
+    <button id="cam-btn" onclick="manualStart()">▶ INICIAR CÁMARA</button>
+    <div id="err-box"></div>
     <button id="retry-btn" onclick="location.reload()">[ REINTENTAR ]</button>
   </div>
 
-  <!-- ════ HUD ════ -->
-  <div id="hud" style="display:none">
-    <span>▶ AR_ALGEBRA</span>
-    <span id="prog">EJ 1/10</span>
-    <span id="score">✦ 0</span>
+  <!-- ══════ HUD ══════ -->
+  <div id="hud">
+    <div class="hud-row">
+      <!-- Puntos -->
+      <div class="hud-col">
+        <div class="hud-label">PUNTOS</div>
+        <div id="pts-display">
+          <div class="digit" id="d2">0</div>
+          <div class="digit" id="d1">0</div>
+          <div class="digit" id="d0">0</div>
+        </div>
+      </div>
+
+      <!-- Dots de progreso -->
+      <div id="dots"></div>
+
+      <!-- Racha -->
+      <div class="hud-col right">
+        <div class="hud-label">RACHA</div>
+        <div id="streak-display"><span>x</span><span id="streak-val">0</span></div>
+      </div>
+    </div>
   </div>
 
-  <!-- ════ INFO IMAGEN ════ -->
-  <div id="img-info" style="display:none">
-    Apunta al póster de ejemplo · <a href="https://hiukim.github.io/mind-ar-js-doc/assets/quick-start/card.png"
-      style="color:#00ffaa" target="_blank">Ver imagen objetivo ↗</a>
-  </div>
-
-  <!-- ════ HINT ════ -->
-  <div id="hint" style="display:none">[ APUNTA A LA IMAGEN OBJETIVO ]</div>
-
-  <!-- ════ PANEL ════ -->
-  <div id="panel">
-    <div id="question">Cargando...</div>
+  <!-- ══════ CARD EJERCICIO ══════ -->
+  <div id="card">
+    <div class="card-meta">
+      <span class="card-tag">◆ EJERCICIO ACTUAL</span>
+      <span class="card-num" id="card-num">01/10</span>
+    </div>
+    <div id="equation">4x + 5 = 13</div>
+    <div class="card-sub">ENCUENTRA EL VALOR DE X</div>
     <div id="feedback"></div>
-    <div id="options"></div>
   </div>
 
-  <!-- ════ FIN ════ -->
+  <!-- ══════ BOTONES A/B/C ══════ -->
+  <div id="answers"></div>
+
+  <!-- ══════ HINT ══════ -->
+  <div id="hint">[ APUNTA A LA IMAGEN OBJETIVO ]</div>
+
+  <!-- ══════ FIN ══════ -->
   <div id="endscreen">
     <h2>MISIÓN COMPLETA</h2>
-    <p id="finalscore">ACIERTOS: 0 / 10</p>
-    <button onclick="restart()">[ REINICIAR ]</button>
+    <p id="final-score">ACIERTOS: 0 / 10</p>
+    <p id="final-streak" style="color:var(--gold)">RACHA MÁX: 0</p>
+    <button onclick="restart()">[ JUGAR DE NUEVO ]</button>
   </div>
 
-  <!--
-    A-FRAME + MINDAR SCENE
-    ──────────────────────────────────────────────────────────
-    mindar-image:
-      • imageTargetSrc: archivo .mind (imagen de referencia compilada)
-        Usamos el ejemplo oficial de MindAR. Para tu propia imagen:
-        1. Ve a https://hiukim.github.io/mind-ar-js-doc/tools/compile
-        2. Sube tu imagen → descarga el .mind
-        3. Súbelo a tu repo y cambia la URL aquí.
-      • autoStart:false → nosotros arrancamos el tracking manualmente
-        DESPUÉS de tener el permiso de cámara confirmado.
-      • uiLoading / uiError / uiScanning: false → manejamos la UI nosotros.
-
-    renderer:
-      • logarithmicDepthBuffer:false → evita pantalla negra en Adreno/Mali
-      • precision:medium             → alivia GPU del Redmi
-      • alpha:true                   → fondo transparente
-  -->
+  <!-- ══════ A-FRAME + MINDAR ══════
+    colorManagement:true  → corrección de color para transparencia correcta
+    alpha:true            → canvas WebGL con canal alpha (fondo transparente)
+    logarithmicDepthBuffer:false → evita pantalla negra en GPU Adreno/Mali
+    autoStart:false       → arrancamos manualmente tras confirmar permiso
+  ══════════════════════════════════ -->
   <a-scene
     id="ar-scene"
     mindar-image="imageTargetSrc:https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/examples/assets/card-example/targets.mind;
@@ -267,285 +438,394 @@
                   uiError:false;
                   uiScanning:false;"
     embedded
-    renderer="antialias:true; alpha:true; precision:medium; logarithmicDepthBuffer:false;"
+    renderer="antialias:true; alpha:true; colorManagement:true; precision:medium; logarithmicDepthBuffer:false;"
     vr-mode-ui="enabled:false"
     device-orientation-permission-ui="enabled:false"
   >
     <a-assets></a-assets>
-
     <a-camera position="0 0 0" look-controls="enabled:false"></a-camera>
 
-    <!--
-      a-entity con mindar-image-target index="0"
-      El contenido hijo aparece cuando la imagen es detectada.
-    -->
     <a-entity mindar-image-target="targetIndex:0">
-
-      <!-- Panel 3D sobre la imagen -->
-      <a-plane
-        position="0 0 0.001"
-        width="1" height="0.55"
-        color="#001200"
-        opacity="0.88"
-        material="shader:flat;"
-      ></a-plane>
-
-      <!-- Texto del ejercicio en AR -->
-      <a-text
-        id="ar-q"
-        value="AR ALGEBRA"
-        align="center"
-        color="#00ff88"
-        width="0.9"
-        position="0 0.1 0.002"
-        wrap-count="24"
-      ></a-text>
-
-      <!-- Estado en AR -->
-      <a-text
-        id="ar-s"
-        value="Responde abajo"
-        align="center"
-        color="#00aa44"
-        width="0.8"
-        position="0 -0.1 0.002"
-        wrap-count="28"
-      ></a-text>
-
+      <!-- Panel 3D flotante sobre la imagen objetivo -->
+      <a-plane position="0 0 0.001" width="1" height="0.4"
+               color="#061210" opacity="0.88" material="shader:flat;"></a-plane>
+      <a-text id="ar-eq"    value="AR ALGEBRA" align="center"
+              color="#00ff88" width="0.9" position="0 0.08 0.002" wrap-count="22"></a-text>
+      <a-text id="ar-state" value="Responde abajo" align="center"
+              color="#00aa44" width="0.8" position="0 -0.1 0.002" wrap-count="26"></a-text>
     </a-entity>
   </a-scene>
 
   <script>
-    /* ════════════════════════════════════════════
-       DIAGNÓSTICO DE CÁMARA
-       Antes de arrancar MindAR, pedimos permiso
-       explícitamente y capturamos el error exacto.
-    ════════════════════════════════════════════ */
+  /* ═══════════════════════════════════════════════════════════
+     DATOS — 10 ejercicios con 3 opciones cada uno
+  ═══════════════════════════════════════════════════════════ */
+  var EX = [
+    { eq:'4x + 5 = 13',  sub:'ENCUENTRA EL VALOR DE X', opts:['-1','2','5'],       ans:'2'  },
+    { eq:'3x = 21',      sub:'ENCUENTRA EL VALOR DE X', opts:['6','7','9'],        ans:'7'  },
+    { eq:'2x + 4 = 14',  sub:'ENCUENTRA EL VALOR DE X', opts:['3','5','6'],        ans:'5'  },
+    { eq:'x² = 49',      sub:'VALOR POSITIVO DE X',     opts:['6','7','8'],        ans:'7'  },
+    { eq:'x / 4 = 3',    sub:'ENCUENTRA EL VALOR DE X', opts:['9','12','16'],      ans:'12' },
+    { eq:'x² − 9 = 0',   sub:'FACTORIZA',               opts:['(x+3)²','(x-3)(x+3)','(x-3)²'], ans:'(x-3)(x+3)' },
+    { eq:'5x − 3 = 22',  sub:'ENCUENTRA EL VALOR DE X', opts:['4','5','6'],        ans:'5'  },
+    { eq:'y = 3x + 7',   sub:'¿CUÁL ES LA PENDIENTE?',  opts:['3','7','1'],        ans:'3'  },
+    { eq:'4(x−2) = 16',  sub:'ENCUENTRA EL VALOR DE X', opts:['4','5','6'],        ans:'6'  },
+    { eq:'2x / 3 = 8',   sub:'ENCUENTRA EL VALOR DE X', opts:['10','12','14'],     ans:'12' }
+  ];
 
-    var $splash  = document.getElementById('splash');
-    var $status  = document.getElementById('splash-status');
-    var $errBox  = document.getElementById('error-box');
-    var $retryBtn= document.getElementById('retry-btn');
-    var $icon    = document.getElementById('splash-icon');
+  var LETTERS = ['A','B','C'];
 
-    function setStatus(msg) { $status.textContent = msg; }
+  /* ═══════════════════════════════════════════════════════════
+     ESTADO
+  ═══════════════════════════════════════════════════════════ */
+  var idx      = 0;
+  var score    = 0;
+  var streak   = 0;
+  var maxStreak= 0;
+  var answered = false;
 
-    function showError(err) {
-      // Detener animación
-      $icon.style.animation = 'none';
-      $icon.textContent = '✗';
-      $icon.style.color = '#ff3355';
+  /* ═══════════════════════════════════════════════════════════
+     REFS DOM
+  ═══════════════════════════════════════════════════════════ */
+  var $splash  = document.getElementById('splash');
+  var $status  = document.getElementById('splash-status');
+  var $camBtn  = document.getElementById('cam-btn');
+  var $errBox  = document.getElementById('err-box');
+  var $retryBtn= document.getElementById('retry-btn');
+  var $icon    = document.getElementById('splash-icon');
+  var $hud     = document.getElementById('hud');
+  var $card    = document.getElementById('card');
+  var $answers = document.getElementById('answers');
+  var $hint    = document.getElementById('hint');
+  var $end     = document.getElementById('endscreen');
 
-      // Mensaje amigable + código exacto del sistema
-      var friendly = '';
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        friendly = 'Permiso de cámara denegado.\nVe a Ajustes del navegador → Permisos → Cámara\ny permite este sitio. Luego recarga.';
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        friendly = 'No se encontró cámara trasera.';
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        friendly = 'La cámara está ocupada por otra app.\nCiérrala y recarga.';
-      } else if (err.name === 'OverconstrainedError') {
-        friendly = 'La configuración de cámara no es compatible con este dispositivo.';
-      } else if (err.name === 'SecurityError') {
-        friendly = 'Error de seguridad: el sitio debe abrirse por HTTPS.';
-      } else if (err.name === 'AbortError') {
-        friendly = 'El acceso a la cámara fue interrumpido.';
-      } else {
-        friendly = 'Error desconocido al acceder a la cámara.';
-      }
-
-      setStatus(friendly);
-
-      // Bloque de diagnóstico con el mensaje exacto del sistema
-      $errBox.style.display = 'block';
-      $errBox.innerHTML =
-        '<strong>[ DIAGNÓSTICO ]</strong><br>' +
-        'name: '    + (err.name    || 'N/A') + '<br>' +
-        'message: ' + (err.message || 'N/A') + '<br>' +
-        'constraint: ' + (err.constraint || 'N/A') + '<br>' +
-        'stack: '   + (err.stack ? err.stack.split('\n')[0] : 'N/A');
-
-      $retryBtn.style.display = 'block';
+  /* ═══════════════════════════════════════════════════════════
+     DOTS DE PROGRESO
+  ═══════════════════════════════════════════════════════════ */
+  function buildDots() {
+    var c = document.getElementById('dots');
+    c.innerHTML = '';
+    for (var i = 0; i < EX.length; i++) {
+      var d = document.createElement('div');
+      d.className = 'dot' + (i === 0 ? ' active' : '');
+      d.id = 'dot-'+i;
+      c.appendChild(d);
     }
+  }
 
-    /* ════════════════════════════════════════════
-       BOOT: pedir cámara → arrancar MindAR
-    ════════════════════════════════════════════ */
-    async function boot() {
-      setStatus('Verificando disponibilidad de cámara...');
-
-      // 1. Comprobar soporte de API
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showError({
-          name: 'APINotSupported',
-          message: 'navigator.mediaDevices no disponible. Usa Chrome/Firefox por HTTPS.'
-        });
-        return;
-      }
-
-      // 2. Pedir permiso — constraints mínimas para máxima compatibilidad HyperOS
-      //    Solo indicamos cámara trasera; NO forzamos resolución.
-      var stream;
-      try {
-        setStatus('Solicitando acceso a cámara trasera...');
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { facingMode: 'environment' }
-        });
-      } catch (err) {
-        showError(err);
-        return;
-      }
-
-      // 3. Permiso concedido → liberar stream (MindAR abrirá su propio track)
-      setStatus('✓ Cámara accesible. Cargando motor de tracking...');
-      stream.getTracks().forEach(function(t) { t.stop(); });
-
-      // 4. Esperar a que A-Frame y MindAR estén registrados
-      var scene = document.getElementById('ar-scene');
-
-      function startMindAR() {
-        setStatus('✓ Motor listo. Iniciando tracking...');
-
-        var sys = scene.systems['mindar-image-system'];
-        if (!sys) {
-          // Aún no registrado, reintentar
-          setTimeout(startMindAR, 300);
-          return;
-        }
-
-        // Arrancar MindAR manualmente (autoStart:false)
-        sys.start().then(function() {
-          // ✓ Todo OK: ocultar splash, mostrar UI
-          $splash.style.display = 'none';
-          document.getElementById('hud').style.display      = '';
-          document.getElementById('img-info').style.display = '';
-          document.getElementById('hint').style.display     = '';
-
-          bindTargetEvents();
-
-        }).catch(function(err) {
-          // MindAR falló al abrir la cámara: mostrar diagnóstico
-          showError(err instanceof Error ? err : { name:'MindARError', message: String(err) });
-        });
-      }
-
-      if (scene.hasLoaded) {
-        startMindAR();
-      } else {
-        scene.addEventListener('loaded', startMindAR);
-      }
+  function updateDots(i) {
+    for (var j = 0; j < EX.length; j++) {
+      var d = document.getElementById('dot-'+j);
+      if (!d) continue;
+      d.className = 'dot' + (j < i ? ' done' : j === i ? ' active' : '');
     }
+  }
 
-    /* ════════════════════════════════════════════
-       EVENTOS DE IMAGEN DETECTADA / PERDIDA
-    ════════════════════════════════════════════ */
-    function bindTargetEvents() {
-      var target = document.querySelector('[mindar-image-target]');
-      if (!target) { setTimeout(bindTargetEvents, 400); return; }
+  /* ═══════════════════════════════════════════════════════════
+     PUNTOS — display de 3 dígitos con brillo
+  ═══════════════════════════════════════════════════════════ */
+  function updateScore(s) {
+    var str = String(s).padStart(3,'0');
+    ['d2','d1','d0'].forEach(function(id, i) {
+      var el = document.getElementById(id);
+      el.textContent = str[i];
+      el.classList.toggle('lit', str[i] !== '0');
+    });
+  }
 
-      target.addEventListener('targetFound', function() {
-        document.getElementById('hint').style.display  = 'none';
-        if (idx < EX.length) document.getElementById('panel').style.display = '';
+  function updateStreak(s) {
+    document.getElementById('streak-val').textContent = s;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     CARGAR EJERCICIO
+  ═══════════════════════════════════════════════════════════ */
+  function load(i) {
+    answered = false;
+    var ex = EX[i];
+
+    document.getElementById('card-num').textContent  = String(i+1).padStart(2,'0') + '/10';
+    document.getElementById('equation').textContent  = ex.eq;
+    document.querySelector('.card-sub').textContent  = ex.sub;
+    document.getElementById('feedback').textContent  = '';
+    document.getElementById('feedback').className    = '';
+
+    // Actualizar texto en AR
+    var arEq = document.getElementById('ar-eq');
+    var arSt = document.getElementById('ar-state');
+    if (arEq) arEq.setAttribute('value', ex.eq);
+    if (arSt) arSt.setAttribute('value', 'Responde abajo');
+
+    // Botones A / B / C
+    $answers.innerHTML = '';
+    ex.opts.forEach(function(opt, j) {
+      var btn = document.createElement('button');
+      btn.className = 'ans-btn';
+      btn.innerHTML =
+        '<span class="btn-letter">' + LETTERS[j] + '</span>' +
+        '<span class="btn-value">'  + opt + '</span>';
+      btn.addEventListener('click', function() { pick(btn, opt); });
+      $answers.appendChild(btn);
+    });
+
+    updateDots(i);
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     PROCESAR RESPUESTA
+  ═══════════════════════════════════════════════════════════ */
+  function pick(btn, selected) {
+    if (answered) return;
+    answered = true;
+
+    var ex      = EX[idx];
+    var allBtns = $answers.querySelectorAll('.ans-btn');
+    allBtns.forEach(function(b) { b.disabled = true; });
+
+    var arSt = document.getElementById('ar-state');
+    var fb   = document.getElementById('feedback');
+
+    if (selected === ex.ans) {
+      score++;
+      streak++;
+      if (streak > maxStreak) maxStreak = streak;
+      btn.classList.add('ok');
+      fb.textContent = '✦ CORRECTO';
+      fb.className   = 'ok';
+      if (arSt) arSt.setAttribute('value','✦ CORRECTO!');
+      setTimeout(next, 1300);
+    } else {
+      streak = 0;
+      btn.classList.add('err');
+      fb.textContent = '✗ ERA: ' + ex.ans;
+      fb.className   = 'err';
+      if (arSt) arSt.setAttribute('value','Era: '+ex.ans);
+      allBtns.forEach(function(b) {
+        var val = b.querySelector('.btn-value');
+        if (val && val.textContent.trim() === ex.ans) b.classList.add('ok');
       });
-
-      target.addEventListener('targetLost', function() {
-        document.getElementById('panel').style.display = 'none';
-        if (idx < EX.length) document.getElementById('hint').style.display  = '';
-      });
+      setTimeout(next, 1900);
     }
 
-    /* ════════════════════════════════════════════
-       EJERCICIOS
-    ════════════════════════════════════════════ */
-    var EX = [
-      { q:'Si 3x = 21, ¿cuánto vale x?',            opts:['5','7','9','6'],                              ans:'7'          },
-      { q:'Resuelve: 2x + 4 = 14',                   opts:['3','5','4','6'],                              ans:'5'          },
-      { q:'¿Qué valor de x satisface x² = 49?',      opts:['6','8','7','5'],                              ans:'7'          },
-      { q:'Si x/4 = 3, entonces x = ?',              opts:['9','16','12','7'],                            ans:'12'         },
-      { q:'Factoriza: x² - 9',                       opts:['(x-3)(x+3)','(x-3)²','(x+9)(x-1)','(x+3)²'],ans:'(x-3)(x+3)' },
-      { q:'Si 5x - 3 = 22, ¿cuánto vale x?',        opts:['4','5','6','3'],                              ans:'5'          },
-      { q:'Pendiente de y = 3x + 7',                 opts:['7','3','-3','1'],                             ans:'3'          },
-      { q:'Resuelve: 4(x - 2) = 16',                opts:['4','6','5','8'],                              ans:'6'          },
-      { q:'Si x² + 2x = 0, una solución es x = ?',  opts:['1','-1','-2','2'],                            ans:'-2'         },
-      { q:'¿Cuánto vale x en: 2x/3 = 8?',           opts:['10','12','14','16'],                          ans:'12'         }
-    ];
+    updateScore(score);
+    updateStreak(streak);
+  }
 
-    var idx = 0, score = 0, answered = false;
-
-    function load(i) {
-      answered = false;
-      var ex = EX[i];
-      document.getElementById('prog').textContent     = 'EJ '+(i+1)+'/10';
-      document.getElementById('question').textContent = ex.q;
-      document.getElementById('feedback').textContent = '';
-      document.getElementById('feedback').className   = '';
-
-      var arQ = document.getElementById('ar-q');
-      var arS = document.getElementById('ar-s');
-      if (arQ) arQ.setAttribute('value', ex.q);
-      if (arS) arS.setAttribute('value', 'Responde abajo');
-
-      var html = '';
-      ex.opts.forEach(function(o) {
-        var safe = o.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        html += '<button onclick="pick(this,\''+safe+'\')">' + o + '</button>';
-      });
-      document.getElementById('options').innerHTML = html;
+  /* ═══════════════════════════════════════════════════════════
+     AVANZAR
+  ═══════════════════════════════════════════════════════════ */
+  function next() {
+    idx++;
+    if (idx >= EX.length) {
+      $card.style.display    = 'none';
+      $answers.style.display = 'none';
+      $hint.style.display    = 'none';
+      document.getElementById('final-score').textContent  = 'ACIERTOS: '+score+' / 10';
+      document.getElementById('final-streak').textContent = 'RACHA MÁX: '+maxStreak;
+      $end.classList.add('show');
+    } else {
+      load(idx);
     }
+  }
 
-    function pick(btn, selected) {
-      if (answered) return;
-      answered = true;
-      var ex = EX[idx];
-      var allBtns = document.getElementById('options').querySelectorAll('button');
-      allBtns.forEach(function(b){ b.disabled = true; });
-
-      var arS = document.getElementById('ar-s');
-
-      if (selected === ex.ans) {
-        score++;
-        btn.classList.add('ok');
-        document.getElementById('feedback').textContent = '✦ CORRECTO';
-        document.getElementById('feedback').className   = 'ok';
-        document.getElementById('score').textContent    = '✦ '+score;
-        if (arS) arS.setAttribute('value','✦ CORRECTO!');
-        setTimeout(next, 1400);
-      } else {
-        btn.classList.add('err');
-        document.getElementById('feedback').textContent = '✗ ERA: '+ex.ans;
-        document.getElementById('feedback').className   = 'err';
-        if (arS) arS.setAttribute('value','Era: '+ex.ans);
-        allBtns.forEach(function(b){
-          if (b.textContent.trim() === ex.ans) b.classList.add('ok');
-        });
-        setTimeout(next, 2000);
-      }
-    }
-
-    function next() {
-      idx++;
-      if (idx >= EX.length) {
-        document.getElementById('panel').style.display = 'none';
-        document.getElementById('hint').style.display  = 'none';
-        document.getElementById('endscreen').classList.add('show');
-        document.getElementById('finalscore').textContent = 'ACIERTOS: '+score+' / 10';
-      } else {
-        load(idx);
-      }
-    }
-
-    function restart() {
-      idx = 0; score = 0;
-      document.getElementById('score').textContent = '✦ 0';
-      document.getElementById('endscreen').classList.remove('show');
-      document.getElementById('hint').style.display = '';
-      load(0);
-    }
-
-    /* ════ ARRANCAR ════ */
+  /* ═══════════════════════════════════════════════════════════
+     REINICIAR
+  ═══════════════════════════════════════════════════════════ */
+  function restart() {
+    idx = 0; score = 0; streak = 0; maxStreak = 0;
+    updateScore(0);
+    updateStreak(0);
+    $end.classList.remove('show');
     load(0);
-    boot();
+    // Si el marcador está activo, mostramos la card
+    $card.style.display    = 'none';
+    $answers.style.display = 'none';
+    $hint.style.display    = '';
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     FORZAR VIDEO — HyperOS puede bloquear el autoplay
+  ═══════════════════════════════════════════════════════════ */
+  var _videoAttempts = 0;
+  var _videoOK = false;
+
+  function forceVideo() {
+    var vid = document.querySelector('video');
+    if (!vid) {
+      if (_videoAttempts++ < 30) setTimeout(forceVideo, 200);
+      return;
+    }
+
+    // Propiedades requeridas para autoplay en Android/HyperOS
+    vid.muted        = true;
+    vid.playsInline  = true;
+    vid.setAttribute('playsinline','');
+    vid.setAttribute('webkit-playsinline','');
+
+    // Estilos críticos: z-index -1 y visible
+    vid.style.cssText = [
+      'position:fixed',
+      'top:0','left:0',
+      'width:100%','height:100%',
+      'object-fit:cover',
+      'z-index:-1',
+      'display:block',
+      'background:transparent'
+    ].join('!important;') + '!important';
+
+    var p = vid.play();
+    if (p && p.then) {
+      p.then(function() {
+        _videoOK = true;
+        document.getElementById('cam-btn').style.display = 'none';
+      }).catch(function() {
+        // Autoplay bloqueado: mostrar botón manual
+        if (!_videoOK) showManualBtn();
+        if (_videoAttempts++ < 6) setTimeout(forceVideo, 400);
+      });
+    }
+  }
+
+  function showManualBtn() {
+    $status.textContent = 'El navegador bloqueó el autoplay.';
+    $camBtn.style.display = '';
+  }
+
+  // El usuario toca "Iniciar Cámara" → desbloquea autoplay por gesto
+  function manualStart() {
+    var vid = document.querySelector('video');
+    if (vid) {
+      vid.muted = true;
+      vid.play().then(function() {
+        _videoOK = true;
+        $camBtn.style.display = 'none';
+        $status.textContent   = '✓ Cámara iniciada.';
+      }).catch(function(e) {
+        showError({ name:e.name, message:e.message });
+      });
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     MOSTRAR ERROR CON DIAGNÓSTICO EXACTO
+  ═══════════════════════════════════════════════════════════ */
+  function showError(err) {
+    $icon.style.animation = 'none';
+    $icon.textContent     = '✗';
+    $icon.style.color     = '#ff3355';
+
+    var msgs = {
+      NotAllowedError:      'Permiso denegado. Ve a Ajustes del navegador → Permisos → Cámara y habilita este sitio.',
+      PermissionDeniedError:'Permiso denegado. Habilita la cámara en Ajustes del navegador.',
+      NotFoundError:        'No se encontró cámara trasera.',
+      DevicesNotFoundError: 'No se encontró cámara trasera.',
+      NotReadableError:     'La cámara está siendo usada por otra app. Ciérrala y recarga.',
+      TrackStartError:      'La cámara está siendo usada por otra app. Ciérrala y recarga.',
+      OverconstrainedError: 'Configuración de cámara incompatible con este dispositivo.',
+      SecurityError:        'Error de seguridad: abre el sitio por HTTPS.',
+      AbortError:           'Acceso a cámara interrumpido. Recarga.',
+      APINotSupported:      'Tu navegador no soporta WebRTC. Usa Chrome/Firefox por HTTPS.'
+    };
+
+    $status.textContent = msgs[err.name] || 'Error desconocido accediendo a la cámara.';
+
+    $errBox.style.display = 'block';
+    $errBox.innerHTML =
+      '<strong>[ DIAGNÓSTICO ]</strong><br>' +
+      'name: '       + (err.name       || 'N/A') + '<br>' +
+      'message: '    + (err.message    || 'N/A') + '<br>' +
+      'constraint: ' + (err.constraint || 'N/A') + '<br>' +
+      'stack: '      + (err.stack ? err.stack.split('\n')[0] : 'N/A');
+
+    $retryBtn.style.display = 'block';
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     BOOT — pedir permiso → arrancar MindAR
+  ═══════════════════════════════════════════════════════════ */
+  async function boot() {
+    $status.textContent = 'Verificando API de cámara...';
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showError({ name:'APINotSupported', message:'mediaDevices no disponible' });
+      return;
+    }
+
+    // Pedir permiso con constraints mínimas (sin resolución forzada)
+    var stream;
+    try {
+      $status.textContent = 'Solicitando cámara trasera...';
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: 'environment' }
+      });
+    } catch(e) {
+      showError(e);
+      return;
+    }
+
+    // Permiso concedido — liberar track (MindAR abre el suyo)
+    stream.getTracks().forEach(function(t){ t.stop(); });
+    $status.textContent = '✓ Permiso concedido. Cargando motor...';
+
+    var scene = document.getElementById('ar-scene');
+
+    function startMindAR() {
+      var sys = scene.systems['mindar-image-system'];
+      if (!sys) { setTimeout(startMindAR, 300); return; }
+
+      $status.textContent = '✓ Motor listo. Iniciando tracking...';
+
+      sys.start().then(function() {
+        // Motor arrancado — lanzar forzado de video
+        forceVideo();
+
+        // Pequeña espera para dejar que el video se estabilice
+        setTimeout(function() {
+          $splash.style.display = 'none';
+          $hud.style.display    = '';
+          $hint.style.display   = '';
+          buildDots();
+          load(0);
+          bindTarget();
+        }, 600);
+
+      }).catch(function(e) {
+        showError(e instanceof Error ? e : { name:'MindARError', message:String(e) });
+      });
+    }
+
+    if (scene.hasLoaded) { startMindAR(); }
+    else { scene.addEventListener('loaded', startMindAR); }
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     EVENTOS DE IMAGEN DETECTADA / PERDIDA
+  ═══════════════════════════════════════════════════════════ */
+  function bindTarget() {
+    var t = document.querySelector('[mindar-image-target]');
+    if (!t) { setTimeout(bindTarget, 400); return; }
+
+    t.addEventListener('targetFound', function() {
+      $hint.style.display    = 'none';
+      if (idx < EX.length) {
+        $card.style.display    = '';
+        $answers.style.display = 'flex';
+      }
+    });
+
+    t.addEventListener('targetLost', function() {
+      $card.style.display    = 'none';
+      $answers.style.display = 'none';
+      if (idx < EX.length) $hint.style.display = '';
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     ARRANCAR
+  ═══════════════════════════════════════════════════════════ */
+  buildDots();
+  boot();
   </script>
 </body>
 </html>
