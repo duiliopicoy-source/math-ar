@@ -1,678 +1,578 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <meta name="mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <title>MathXR · Hiro AR</title>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR Álgebra | Hacker Mode</title>
 
-  <!--
-    ╔══════════════════════════════════════════════════════╗
-    ║  A-Frame  1.4.2  +  AR.js  3.4.5                    ║
-    ║  Marcador: HIRO  (el clásico negro sobre blanco)     ║
-    ╚══════════════════════════════════════════════════════╝
-  -->
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
+  <!-- A-Frame 1.2.0 estable -->
+  <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1.2.0/dist/aframe.min.js"></script>
+  <!-- AR.js compatible con A-Frame 1.2.0 -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
   <style>
-    /* ── GLOBAL ── */
-    * { margin:0; padding:0; box-sizing:border-box; }
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
+
     :root {
-      --g:     #00ff88;
-      --gdim:  #00994d;
-      --gglow: rgba(0,255,136,.55);
-      --cyan:  #00e5ff;
-      --red:   #ff2255;
-      --rglow: rgba(255,34,85,.55);
-      --yel:   #ffe000;
-      --bg:    rgba(2,12,6,.88);
-      --mono:  'Share Tech Mono', monospace;
-      --disp:  'Orbitron', monospace;
+      --neon: #00ff88;
+      --neon-dim: #00cc66;
+      --neon-glow: rgba(0, 255, 136, 0.3);
+      --dark: #000d00;
+      --panel: rgba(0, 18, 0, 0.92);
+      --border: #00ff88;
+      --wrong: #ff2244;
+      --correct: #00ffcc;
+      --btn-bg: rgba(0, 255, 136, 0.08);
     }
-    html,body { width:100%; height:100%; overflow:hidden; background:#000; font-family:var(--mono); }
 
-    /* A-Frame canvas takes full screen */
-    a-scene { width:100% !important; height:100% !important; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* ── SCANLINES ── */
-    #fx-layer {
-      position:fixed; inset:0; z-index:10; pointer-events:none;
+    body {
+      background: var(--dark);
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--neon);
+      overflow: hidden;
+      height: 100dvh;
+      width: 100vw;
+    }
+
+    /* ── SCANLINES overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
       background: repeating-linear-gradient(
-        0deg, transparent, transparent 3px,
-        rgba(0,255,100,.016) 3px, rgba(0,255,100,.016) 4px
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.12) 2px,
+        rgba(0,0,0,0.12) 4px
       );
-    }
-    #fx-layer::before {
-      content:''; position:absolute; inset:0;
-      background: radial-gradient(ellipse at center, transparent 48%, rgba(0,0,0,.82) 100%);
+      pointer-events: none;
+      z-index: 999;
     }
 
-    /* ── SCREEN FLASH ── */
-    #flash {
-      position:fixed; inset:0; z-index:90; pointer-events:none; opacity:0;
+    /* ── HUD superior ── */
+    #hud {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      background: rgba(0,10,0,0.75);
+      border-bottom: 1px solid var(--neon-dim);
+      z-index: 500;
+      backdrop-filter: blur(4px);
     }
-    #flash.g { background:radial-gradient(ellipse at center,rgba(0,255,136,.55) 0%,transparent 70%); }
-    #flash.r { background:radial-gradient(ellipse at center,rgba(255,34,85,.55)  0%,transparent 70%); }
-    #flash.pop { animation:flashAnim .65s ease-out forwards; }
-    @keyframes flashAnim { 0%{opacity:1} 100%{opacity:0} }
 
-    /* ── STATUS BAR (HUD fixed) ── */
-    #status {
-      position:fixed; top:0; left:0; right:0; z-index:50;
-      display:flex; justify-content:space-between; align-items:center;
-      padding:10px 16px 8px;
-      background:linear-gradient(180deg, rgba(0,8,3,.92) 0%, transparent 100%);
-      pointer-events:none;
+    #hud .logo {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 13px;
+      letter-spacing: 3px;
+      text-shadow: 0 0 10px var(--neon);
     }
-    .sblock { display:flex; flex-direction:column; align-items:center; gap:1px; }
-    .slabel { font-size:8px; letter-spacing:3px; text-transform:uppercase; color:var(--gdim); }
-    .sval   { font-family:var(--disp); font-size:20px; font-weight:700; color:var(--g); text-shadow:0 0 12px var(--gglow); line-height:1; }
-    #sv-streak { color:var(--yel); text-shadow:0 0 12px rgba(255,224,0,.5); }
 
-    /* pips */
-    #pips { display:flex; gap:5px; align-items:center; }
-    .pip { width:8px; height:8px; border-radius:50%; border:1.5px solid rgba(0,255,136,.3); background:transparent; transition:background .3s,box-shadow .3s; }
-    .pip.done   { background:var(--g);    box-shadow:0 0 6px var(--g); }
-    .pip.active { background:var(--cyan); box-shadow:0 0 8px var(--cyan); border-color:var(--cyan); }
+    #hud .counter {
+      font-size: 12px;
+      color: var(--neon-dim);
+      letter-spacing: 2px;
+    }
 
-    /* ── MARKER-LOST OVERLAY ── */
-    #lost-overlay {
-      position:fixed; inset:0; z-index:60;
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      gap:16px; pointer-events:none; opacity:0;
-      transition:opacity .4s;
-      background:rgba(0,0,0,.45);
+    #score-badge {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 13px;
+      color: var(--neon);
+      text-shadow: 0 0 8px var(--neon);
     }
-    #lost-overlay.show { opacity:1; }
-    .lost-icon { font-size:52px; filter:drop-shadow(0 0 14px var(--gdim)); animation:pulse 1.5s ease-in-out infinite; }
-    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
-    .lost-txt {
-      font-family:var(--disp); font-size:14px; font-weight:700;
-      letter-spacing:4px; text-transform:uppercase;
-      color:var(--g); text-shadow:0 0 16px var(--gglow);
-    }
-    .lost-sub { font-size:10px; letter-spacing:3px; color:rgba(0,255,136,.45); text-transform:uppercase; }
 
-    /* ── INTRO SCREEN ── */
-    #intro {
-      position:fixed; inset:0; z-index:200;
-      background:#000;
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      gap:20px; padding:32px; text-align:center;
+    /* ── Panel de ejercicio (UI flotante sobre la vista) ── */
+    #exercise-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      padding: 14px 16px 24px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      z-index: 500;
+      backdrop-filter: blur(6px);
+      transition: opacity 0.4s ease;
     }
-    .i-logo {
-      font-family:var(--disp); font-size:clamp(38px,11vw,64px); font-weight:900;
-      color:var(--g); text-shadow:0 0 40px var(--gglow),0 0 80px rgba(0,255,136,.2);
-      letter-spacing:6px; animation:glitch 4s infinite;
-    }
-    @keyframes glitch {
-      0%,94%,100%{ text-shadow:0 0 40px var(--gglow); transform:none; }
-      95%{ transform:translateX(-3px); text-shadow:-3px 0 var(--cyan),3px 0 var(--red); }
-      96%{ transform:translateX(3px);  text-shadow:3px 0 var(--cyan),-3px 0 var(--red); }
-      97%{ transform:none; }
-    }
-    .i-line { width:60px; height:1px; background:linear-gradient(90deg,transparent,var(--g),transparent); }
-    .i-tag  { font-size:10px; letter-spacing:4px; color:rgba(0,255,136,.5); text-transform:uppercase; line-height:2; }
-    .i-box  {
-      font-size:10px; letter-spacing:2px; line-height:2.2; text-transform:uppercase;
-      color:rgba(255,224,0,.75); padding:12px 18px; max-width:320px;
-      border:1px solid rgba(255,224,0,.22); border-radius:6px; background:rgba(255,224,0,.04);
-    }
-    .i-step { display:flex; align-items:flex-start; gap:10px; text-align:left; max-width:300px; }
-    .i-num  { font-family:var(--disp); font-size:18px; font-weight:700; color:var(--g); min-width:28px; line-height:1.2; }
-    .i-desc { font-size:10px; letter-spacing:2px; color:var(--gdim); line-height:1.8; text-transform:uppercase; }
-    .btn-start {
-      pointer-events:all; cursor:pointer;
-      font-family:var(--disp); font-size:14px; font-weight:700; letter-spacing:6px; text-transform:uppercase;
-      color:var(--g); background:transparent; border:2px solid var(--g); border-radius:8px;
-      padding:15px 48px; box-shadow:0 0 24px rgba(0,255,136,.25); transition:all .2s;
-    }
-    .btn-start:active { background:rgba(0,255,136,.12); box-shadow:0 0 40px rgba(0,255,136,.5); transform:scale(.97); }
 
-    /* scanlines on intro */
-    #intro::after { content:''; position:absolute; inset:0; pointer-events:none;
-      background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,255,100,.018) 3px,rgba(0,255,100,.018) 4px); }
+    #exercise-panel.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
 
-    /* ── FINISH SCREEN ── */
-    #finish {
-      position:fixed; inset:0; z-index:200;
-      background:rgba(0,8,3,.97);
-      display:none; flex-direction:column; align-items:center; justify-content:center;
-      gap:20px; padding:32px; text-align:center;
+    #marker-hint {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      padding: 18px;
+      text-align: center;
+      background: rgba(0,10,0,0.85);
+      border-top: 1px solid var(--neon-dim);
+      z-index: 500;
+      font-size: 14px;
+      color: var(--neon-dim);
+      letter-spacing: 1px;
+      backdrop-filter: blur(4px);
+      animation: blink 1.8s infinite;
     }
-    #finish.show { display:flex; }
-    .f-title { font-family:var(--disp); font-size:clamp(30px,8vw,50px); font-weight:900; color:var(--g); text-shadow:0 0 40px var(--gglow); letter-spacing:4px; line-height:1.2; animation:glitch 3s infinite; }
-    .f-score { font-family:var(--disp); font-size:clamp(60px,16vw,96px); font-weight:900; color:var(--yel); text-shadow:0 0 30px rgba(255,224,0,.6); }
-    .f-sub   { font-size:10px; letter-spacing:4px; color:rgba(0,255,136,.5); text-transform:uppercase; line-height:2.2; }
-    .btn-restart {
-      pointer-events:all; cursor:pointer;
-      font-family:var(--disp); font-size:12px; font-weight:700; letter-spacing:5px; text-transform:uppercase;
-      color:#000; background:var(--g); border:none; border-radius:8px;
-      padding:15px 44px; box-shadow:0 0 24px var(--gglow);
+
+    @keyframes blink {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.4; }
     }
-    .btn-restart:active { transform:scale(.96); }
+
+    #question-label {
+      font-size: 11px;
+      color: var(--neon-dim);
+      letter-spacing: 3px;
+      margin-bottom: 6px;
+    }
+
+    #question-text {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(16px, 4vw, 22px);
+      color: var(--neon);
+      text-shadow: 0 0 12px var(--neon);
+      margin-bottom: 14px;
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+    }
+
+    #feedback {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px;
+      min-height: 22px;
+      margin-bottom: 10px;
+      letter-spacing: 2px;
+      transition: color 0.2s;
+    }
+
+    #feedback.correct { color: var(--correct); text-shadow: 0 0 10px var(--correct); }
+    #feedback.wrong   { color: var(--wrong);   text-shadow: 0 0 10px var(--wrong); }
+
+    #options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .opt-btn {
+      background: var(--btn-bg);
+      border: 1px solid var(--neon-dim);
+      color: var(--neon);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 16px;
+      padding: 14px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .opt-btn:active {
+      transform: scale(0.96);
+    }
+
+    .opt-btn:hover, .opt-btn:focus {
+      background: rgba(0, 255, 136, 0.18);
+      border-color: var(--neon);
+      box-shadow: 0 0 14px var(--neon-glow);
+      outline: none;
+    }
+
+    .opt-btn.correct-flash {
+      background: rgba(0, 255, 204, 0.25);
+      border-color: var(--correct);
+      box-shadow: 0 0 20px rgba(0,255,204,0.5);
+      color: var(--correct);
+    }
+
+    .opt-btn.wrong-flash {
+      background: rgba(255, 34, 68, 0.2);
+      border-color: var(--wrong);
+      box-shadow: 0 0 14px rgba(255,34,68,0.4);
+      color: var(--wrong);
+    }
+
+    /* ── Pantalla de fin ── */
+    #end-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,8,0,0.96);
+      z-index: 600;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+      text-align: center;
+      padding: 30px;
+    }
+
+    #end-screen.visible { display: flex; }
+
+    #end-screen h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(24px, 7vw, 42px);
+      color: var(--neon);
+      text-shadow: 0 0 24px var(--neon), 0 0 60px var(--neon-glow);
+      animation: pulse 1.5s infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { text-shadow: 0 0 20px var(--neon); }
+      to   { text-shadow: 0 0 40px var(--neon), 0 0 80px var(--neon-glow); }
+    }
+
+    #end-screen p {
+      font-size: 16px;
+      color: var(--neon-dim);
+      letter-spacing: 2px;
+    }
+
+    #restart-btn {
+      background: transparent;
+      border: 1px solid var(--neon);
+      color: var(--neon);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px;
+      padding: 14px 32px;
+      letter-spacing: 3px;
+      cursor: pointer;
+      border-radius: 4px;
+      margin-top: 10px;
+      box-shadow: 0 0 16px var(--neon-glow);
+      transition: background 0.2s, box-shadow 0.2s;
+      touch-action: manipulation;
+    }
+
+    #restart-btn:active {
+      background: rgba(0,255,136,0.15);
+      box-shadow: 0 0 30px var(--neon-glow);
+    }
+
+    /* ── A-Frame ocupa todo el fondo ── */
+    a-scene {
+      position: fixed !important;
+      top: 0; left: 0;
+      width: 100vw !important;
+      height: 100dvh !important;
+      z-index: 0;
+    }
+
+    .a-enter-vr { display: none !important; }
+    .a-loader-title { display: none !important; }
   </style>
 </head>
 <body>
 
-<!-- ══ FX OVERLAY (scanlines + vignette) ══ -->
-<div id="fx-layer"></div>
-
-<!-- ══ SCREEN FLASH ══ -->
-<div id="flash"></div>
-
-<!-- ══ STATUS BAR ══ -->
-<div id="status">
-  <div class="sblock">
-    <span class="slabel">Puntos</span>
-    <span class="sval" id="sv-score">000</span>
+  <!-- ══════════════ HUD ══════════════ -->
+  <div id="hud">
+    <span class="logo">▶ AR_ALGEBRA</span>
+    <span class="counter" id="progress-counter">EJ 1 / 10</span>
+    <span id="score-badge">✦ 0</span>
   </div>
-  <div id="pips"></div>
-  <div class="sblock">
-    <span class="slabel">Racha</span>
-    <span class="sval" id="sv-streak">×0</span>
+
+  <!-- ══════════════ HINT (visible cuando no hay marcador) ══════════════ -->
+  <div id="marker-hint">
+    [ APUNTA LA CÁMARA AL MARCADOR HIRO ]
   </div>
-</div>
 
-<!-- ══ MARKER LOST OVERLAY ══ -->
-<div id="lost-overlay">
-  <div class="lost-icon">◎</div>
-  <div class="lost-txt">Buscando marcador</div>
-  <div class="lost-sub">Apunta la cámara al marcador Hiro</div>
-</div>
+  <!-- ══════════════ PANEL DE EJERCICIO ══════════════ -->
+  <div id="exercise-panel" class="hidden">
+    <div id="question-label">// RESUELVE:</div>
+    <div id="question-text">Cargando...</div>
+    <div id="feedback"></div>
+    <div id="options-grid"></div>
+  </div>
 
-<!-- ══════════════════════════════════════════════
-     A-FRAME SCENE — AR.js con marcador HIRO
-══════════════════════════════════════════════ -->
-<a-scene
-  id="scene"
-  embedded
-  arjs="sourceType: webcam; videoSettings: { facingMode: 'environment' }; detectionMode: mono; debugUIEnabled: false; patternRatio: 0.70;"
-  renderer="logarithmicDepthBuffer:true; antialias:true; alpha:true;"
-  vr-mode-ui="enabled:false"
-  loading-screen="enabled:false"
->
+  <!-- ══════════════ PANTALLA FINAL ══════════════ -->
+  <div id="end-screen">
+    <h1>MISIÓN COMPLETA</h1>
+    <p id="final-score">ACIERTOS: 0 / 10</p>
+    <p style="font-size:12px; color:#00aa44; letter-spacing:1px;">Sistema de álgebra terminado exitosamente.</p>
+    <button id="restart-btn" onclick="restartApp()">[ REINICIAR ]</button>
+  </div>
 
-  <!-- ── ASSETS ── -->
-  <a-assets>
-    <!-- Canvas textures generated at runtime by JS -->
-  </a-assets>
-
-  <!-- ══════════════ HIRO MARKER ══════════════ -->
-  <a-marker
-    id="hiro-marker"
-    type="pattern"
-    url="https://raw.githack.com/AR-js-org/AR.js/master/data/data/patt.hiro"
-    raycaster="objects:.clickable"
-    emitevents="true"
-    cursor="fuse:false; rayOrigin:mouse"
+  <!-- ══════════════ A-FRAME SCENE ══════════════ -->
+  <!--
+    Configuración probada para evitar pantalla negra en Android:
+    - logarithmicDepthBuffer: false  → evita glitch en GPU móvil
+    - precision: medium              → equilibrio rendimiento/calidad
+    - arjs sourceType: webcam        → fuerza cámara trasera
+  -->
+  <a-scene
+    embedded
+    renderer="antialias: true; alpha: true; precision: medium; logarithmicDepthBuffer: false;"
+    vr-mode-ui="enabled: false"
+    arjs="sourceType: webcam;
+          facingMode: environment;
+          debugUIEnabled: false;
+          detectionMode: mono_and_matrix;
+          matrixCodeType: 3x3;"
+    gesture-detector
   >
+    <a-assets></a-assets>
 
-    <!-- ────────────────────────────────────────────
-         PANEL PRINCIPAL — flota 6cm sobre el marcador
-         (A-Frame usa metros; marcador Hiro ≈ 8cm real)
-    ──────────────────────────────────────────── -->
-
-    <!-- Sombra/glow base -->
-    <a-plane
-      id="panel-glow"
-      width="2.4" height="1.7"
-      color="#00ff88" opacity="0.04"
-      position="0 0.01 0"
-      rotation="-90 0 0"
-      material="shader:flat"
-    ></a-plane>
-
-    <!-- Grupo del panel (lo rotamos para quedar vertical sobre el marcador) -->
-    <a-entity id="board" position="0 1.2 0" rotation="0 0 0">
-
-      <!-- Fondo translúcido del panel -->
+    <!-- Marcador Hiro -->
+    <a-marker
+      preset="hiro"
+      id="hiro-marker"
+      emitevents="true"
+      cursor="fuse: false; rayOrigin: mouse;"
+    >
+      <!-- Plano base neón bajo el texto 3D -->
       <a-plane
-        id="panel-bg"
-        width="2.2" height="1.55"
-        color="#020c06" opacity="0.92"
-        position="0 0 -0.002"
-        material="shader:flat; transparent:true;"
+        position="0 0.01 0"
+        rotation="-90 0 0"
+        width="2.4" height="1.2"
+        color="#000d00"
+        opacity="0.82"
+        material="shader: flat;"
       ></a-plane>
 
-      <!-- Borde exterior (glow verde) -->
+      <!-- Borde neón decorativo -->
       <a-plane
-        id="panel-border"
-        width="2.24" height="1.59"
-        color="#00ff88" opacity="0.22"
-        position="0 0 -0.004"
-        material="shader:flat; transparent:true;"
-        animation="property:opacity; from:0.12; to:0.35; dur:2000; easing:easeInOutSine; loop:true; dir:alternate"
+        position="0 0.005 0"
+        rotation="-90 0 0"
+        width="2.5" height="1.3"
+        color="#00ff88"
+        opacity="0.18"
+        material="shader: flat;"
       ></a-plane>
 
-      <!-- Línea decorativa superior -->
-      <a-plane width="2.0" height="0.012" color="#00ff88" opacity="0.7"
-        position="0 0.62 0.001" material="shader:flat"></a-plane>
-
-      <!-- Línea decorativa inferior -->
-      <a-plane width="2.0" height="0.012" color="#00ff88" opacity="0.7"
-        position="0 -0.62 0.001" material="shader:flat"></a-plane>
-
-      <!-- ETIQUETA "EJERCICIO" -->
+      <!-- Texto del ejercicio en AR -->
       <a-text
-        id="t-label"
-        value="◈ EJERCICIO 01/10"
-        align="center"
-        color="#00994d"
-        width="2.0"
-        position="0 0.55 0.01"
-        font="https://cdn.aframe.io/fonts/ShareTechMono-Regular.fnt"
-        letter-spacing="6"
-        scale="0.72 0.72 0.72"
-      ></a-text>
-
-      <!-- ECUACIÓN (texto grande, verde neón) -->
-      <a-text
-        id="t-eq"
-        value="4x + 5 = 13"
+        id="ar-exercise-text"
+        value="AR ALGEBRA"
         align="center"
         color="#00ff88"
-        width="2.1"
-        position="0 0.22 0.01"
+        width="2.2"
+        position="0 0.55 0"
+        rotation="-90 0 0"
         font="https://cdn.aframe.io/fonts/ShareTechMono-Regular.fnt"
-        scale="1.32 1.32 1.32"
+        wrap-count="28"
       ></a-text>
 
-      <!-- SUBLABEL -->
+      <!-- Indicador de estado en AR -->
       <a-text
-        value="ENCUENTRA EL VALOR DE X"
+        id="ar-status-text"
+        value="▶ Responde abajo"
         align="center"
-        color="#005533"
+        color="#00cc66"
         width="1.8"
-        position="0 -0.05 0.01"
+        position="0 0.15 0"
+        rotation="-90 0 0"
         font="https://cdn.aframe.io/fonts/ShareTechMono-Regular.fnt"
-        letter-spacing="5"
-        scale="0.55 0.55 0.55"
+        wrap-count="32"
       ></a-text>
 
-      <!-- Divisor central -->
-      <a-plane width="1.9" height="0.008" color="#00ff88" opacity="0.3"
-        position="0 -0.16 0.001" material="shader:flat"></a-plane>
+    </a-marker>
 
-      <!-- ── BOTÓN A ── -->
-      <a-entity id="btn-a" position="-0.72 -0.52 0" class="clickable">
-        <a-plane
-          id="bg-a" class="clickable"
-          width="0.58" height="0.28"
-          color="#020c06" opacity="0.95"
-          material="shader:flat;transparent:true;"
-        ></a-plane>
-        <a-plane width="0.60" height="0.30" color="#00ff88" opacity="0.22"
-          position="0 0 -0.001" material="shader:flat;transparent:true;"></a-plane>
-        <a-text id="t-a" value="A:  2" align="center" color="#cffde4"
-          width="0.55" position="0 0 0.01"
-          font="https://cdn.aframe.io/fonts/ShareTechMono-Regular.fnt"
-          scale="0.85 0.85 0.85"></a-text>
-      </a-entity>
+    <a-entity camera></a-entity>
+  </a-scene>
 
-      <!-- ── BOTÓN B ── -->
-      <a-entity id="btn-b" position="0 -0.52 0" class="clickable">
-        <a-plane
-          id="bg-b" class="clickable"
-          width="0.58" height="0.28"
-          color="#020c06" opacity="0.95"
-          material="shader:flat;transparent:true;"
-        ></a-plane>
-        <a-plane width="0.60" height="0.30" color="#00e5ff" opacity="0.18"
-          position="0 0 -0.001" material="shader:flat;transparent:true;"></a-plane>
-        <a-text id="t-b" value="B:  5" align="center" color="#cffde4"
-          width="0.55" position="0 0 0.01"
-          font="https://cdn.aframe.io/fonts/ShareTechMono-Regular.fnt"
-          scale="0.85 0.85 0.85"></a-text>
-      </a-entity>
+  <!-- ══════════════ LÓGICA DE LA APP ══════════════ -->
+  <script>
+    // ── Ejercicios de álgebra ──────────────────────────────
+    const exercises = [
+      {
+        q: "Si 3x = 21, ¿cuánto vale x?",
+        options: ["5", "7", "9", "6"],
+        answer: "7"
+      },
+      {
+        q: "Resuelve: 2x + 4 = 14",
+        options: ["3", "5", "4", "6"],
+        answer: "5"
+      },
+      {
+        q: "¿Qué valor de x satisface x² = 49?",
+        options: ["6", "8", "7", "5"],
+        answer: "7"
+      },
+      {
+        q: "Si x/4 = 3, entonces x = ?",
+        options: ["9", "16", "12", "7"],
+        answer: "12"
+      },
+      {
+        q: "Factoriza: x² - 9 = ?",
+        options: ["(x-3)(x+3)", "(x-3)²", "(x+9)(x-1)", "(x+3)²"],
+        answer: "(x-3)(x+3)"
+      },
+      {
+        q: "Si 5x - 3 = 22, ¿cuánto vale x?",
+        options: ["4", "5", "6", "3"],
+        answer: "5"
+      },
+      {
+        q: "¿Cuál es la pendiente de y = 3x + 7?",
+        options: ["7", "3", "-3", "1"],
+        answer: "3"
+      },
+      {
+        q: "Resuelve: 4(x - 2) = 16",
+        options: ["4", "6", "5", "8"],
+        answer: "6"
+      },
+      {
+        q: "Si x² + 2x = 0, una solución es x = ?",
+        options: ["1", "-1", "-2", "2"],
+        answer: "-2"
+      },
+      {
+        q: "¿Cuánto vale x en: 2x/3 = 8?",
+        options: ["10", "12", "14", "16"],
+        answer: "12"
+      }
+    ];
 
-      <!-- ── BOTÓN C ── -->
-      <a-entity id="btn-c" position="0.72 -0.52 0" class="clickable">
-        <a-plane
-          id="bg-c" class="clickable"
-          width="0.58" height="0.28"
-          color="#020c06" opacity="0.95"
-          material="shader:flat;transparent:true;"
-        ></a-plane>
-        <a-plane width="0.60" height="0.30" color="#7b61ff" opacity="0.18"
-          position="0 0 -0.001" material="shader:flat;transparent:true;"></a-plane>
-        <a-text id="t-c" value="C: -1" align="center" color="#cffde4"
-          width="0.55" position="0 0 0.01"
-          font="https://cdn.aframe.io/fonts/ShareTechMono-Regular.fnt"
-          scale="0.85 0.85 0.85"></a-text>
-      </a-entity>
+    // ── Estado ────────────────────────────────────────────
+    let currentIdx = 0;
+    let score = 0;
+    let markerVisible = false;
+    let answered = false;
 
-    </a-entity><!-- /board -->
+    // ── Referencias DOM ───────────────────────────────────
+    const panel        = document.getElementById('exercise-panel');
+    const hint         = document.getElementById('marker-hint');
+    const questionText = document.getElementById('question-text');
+    const feedbackEl   = document.getElementById('feedback');
+    const optionsGrid  = document.getElementById('options-grid');
+    const scoreBadge   = document.getElementById('score-badge');
+    const progressEl   = document.getElementById('progress-counter');
+    const endScreen    = document.getElementById('end-screen');
+    const finalScore   = document.getElementById('final-score');
+    const arText       = document.getElementById('ar-exercise-text');
+    const arStatus     = document.getElementById('ar-status-text');
 
-    <!-- ── PARTÍCULAS 3D (sferas que explotan al acertar) ── -->
-    <a-entity id="sparks"></a-entity>
+    // ── Cargar ejercicio ──────────────────────────────────
+    function loadExercise(idx) {
+      const ex = exercises[idx];
+      answered = false;
+      feedbackEl.textContent = '';
+      feedbackEl.className = '';
+      progressEl.textContent = `EJ ${idx + 1} / 10`;
+      questionText.textContent = ex.q;
 
-    <!-- ── ANILLO BAJO EL PANEL (decorativo) ── -->
-    <a-torus
-      radius="0.6" radius-tubular="0.008"
-      color="#00ff88" opacity="0.18"
-      position="0 0.02 0"
-      rotation="-90 0 0"
-      material="shader:flat"
-      animation="property:rotation; from:-90 0 0; to:-90 360 0; dur:8000; easing:linear; loop:true"
-    ></a-torus>
-    <a-torus
-      radius="0.9" radius-tubular="0.005"
-      color="#00e5ff" opacity="0.10"
-      position="0 0.02 0"
-      rotation="-90 45 0"
-      material="shader:flat"
-      animation="property:rotation; from:-90 45 0; to:-90 -315 0; dur:14000; easing:linear; loop:true"
-    ></a-torus>
+      // Actualizar texto en AR
+      if (arText) arText.setAttribute('value', ex.q);
+      if (arStatus) arStatus.setAttribute('value', `▶ Responde abajo`);
 
-    <!-- ── PUNTOS FLOTANTES (halo ambiente) ── -->
-    <a-sphere radius="0.03" color="#00ff88" opacity="0.6" position=" 0.55 0.45 0.2"
-      animation="property:position; to:0.55 0.65 0.2; dur:2200; easing:easeInOutSine; loop:true; dir:alternate"
-      material="shader:flat"></a-sphere>
-    <a-sphere radius="0.02" color="#00e5ff" opacity="0.5" position="-0.60 0.55 -0.15"
-      animation="property:position; to:-0.60 0.75 -0.15; dur:1800; easing:easeInOutSine; loop:true; dir:alternate"
-      material="shader:flat"></a-sphere>
-    <a-sphere radius="0.025" color="#7b61ff" opacity="0.55" position="0.1 0.9 0.3"
-      animation="property:position; to:0.1 1.1 0.3; dur:2600; easing:easeInOutSine; loop:true; dir:alternate"
-      material="shader:flat"></a-sphere>
+      // Generar botones
+      optionsGrid.innerHTML = '';
+      ex.options.forEach(opt => {
+        const btn = document.createElement('button');
+        btn.className = 'opt-btn';
+        btn.textContent = opt;
+        btn.addEventListener('click', () => handleAnswer(opt, btn));
+        optionsGrid.appendChild(btn);
+      });
+    }
 
-  </a-marker><!-- /hiro-marker -->
+    // ── Manejar respuesta ─────────────────────────────────
+    function handleAnswer(selected, btn) {
+      if (answered) return;
+      answered = true;
 
-  <!-- CAMERA — cámara trasera forzada -->
-  <a-entity camera></a-entity>
+      const ex = exercises[currentIdx];
+      const allBtns = optionsGrid.querySelectorAll('.opt-btn');
+      allBtns.forEach(b => b.disabled = true);
 
-</a-scene>
+      if (selected === ex.answer) {
+        score++;
+        btn.classList.add('correct-flash');
+        feedbackEl.textContent = '✦ ¡CORRECTO!';
+        feedbackEl.className = 'correct';
+        scoreBadge.textContent = `✦ ${score}`;
+        if (arStatus) arStatus.setAttribute('value', '✦ ¡CORRECTO!');
 
-<!-- ══ INTRO SCREEN ══ -->
-<div id="intro">
-  <div class="i-logo">MATH XR</div>
-  <div class="i-line"></div>
-  <div class="i-tag">Álgebra espacial · Marcador Hiro</div>
-  <div class="i-box">
-    ⚠ Requiere HTTPS · Permite acceso a la cámara<br>
-    Recomendado: Chrome en Android
-  </div>
-  <div class="i-step">
-    <div class="i-num">1</div>
-    <div class="i-desc">Imprime o muestra el marcador Hiro<br>en tu pantalla o papel</div>
-  </div>
-  <div class="i-step">
-    <div class="i-num">2</div>
-    <div class="i-desc">Apunta la cámara trasera al marcador.<br>Aparecerá el panel de ejercicios en 3D</div>
-  </div>
-  <div class="i-step">
-    <div class="i-num">3</div>
-    <div class="i-desc">Toca la esfera/botón con la respuesta<br>correcta para avanzar</div>
-  </div>
-  <button class="btn-start" id="btn-start">INICIAR</button>
-</div>
+        // Avanzar automáticamente
+        setTimeout(() => nextExercise(), 1500);
+      } else {
+        btn.classList.add('wrong-flash');
+        feedbackEl.textContent = `✗ ERROR — Era: ${ex.answer}`;
+        feedbackEl.className = 'wrong';
+        if (arStatus) arStatus.setAttribute('value', `Respuesta: ${ex.answer}`);
 
-<!-- ══ FINISH SCREEN ══ -->
-<div id="finish">
-  <div class="f-title">¡NIVEL<br>COMPLETADO!</div>
-  <div class="f-score" id="f-pts">000</div>
-  <div class="f-sub">puntos totales<br><span id="f-streak"></span></div>
-  <button class="btn-restart" id="btn-restart">REINICIAR</button>
-</div>
+        // Resaltar correcta
+        allBtns.forEach(b => {
+          if (b.textContent === ex.answer) b.classList.add('correct-flash');
+        });
+        setTimeout(() => nextExercise(), 2200);
+      }
+    }
 
-<!-- ════════════════════════════════════════════════════════
-     JAVASCRIPT — Lógica completa
-════════════════════════════════════════════════════════ -->
-<script>
-/* ═══════════════════════════════════
-   BANCO DE EJERCICIOS  (10 preguntas)
-═══════════════════════════════════ */
-const EXERCISES = [
-  { eq:'4x + 5 = 13',   ans:2,  opts:[2,  5,  -1] },
-  { eq:'2x - 4 = 10',   ans:7,  opts:[7,  3,  10] },
-  { eq:'3x + 6 = 18',   ans:4,  opts:[4,  6,   2] },
-  { eq:'5x - 10 = 15',  ans:5,  opts:[5,  3,   8] },
-  { eq:'6x + 2 = 20',   ans:3,  opts:[3,  4,   6] },
-  { eq:'2x + 8 = 16',   ans:4,  opts:[4,  2,   6] },
-  { eq:'7x - 7 = 14',   ans:3,  opts:[3,  7,   2] },
-  { eq:'4x + 12 = 28',  ans:4,  opts:[4,  7,   3] },
-  { eq:'9x - 9 = 27',   ans:4,  opts:[4,  3,   9] },
-  { eq:'3x + 3 = 21',   ans:6,  opts:[6,  3,   9] },
-];
+    // ── Siguiente ejercicio ───────────────────────────────
+    function nextExercise() {
+      currentIdx++;
+      if (currentIdx >= exercises.length) {
+        showEndScreen();
+      } else {
+        loadExercise(currentIdx);
+      }
+    }
 
-const KEYS = ['A','B','C'];
+    // ── Pantalla final ────────────────────────────────────
+    function showEndScreen() {
+      panel.classList.add('hidden');
+      hint.style.display = 'none';
+      endScreen.classList.add('visible');
+      finalScore.textContent = `ACIERTOS: ${score} / 10`;
+    }
 
-/* ═══════════════════════════════════
-   STATE
-═══════════════════════════════════ */
-let S = { idx:0, score:0, streak:0, best:0, locked:false, order:[] };
+    function restartApp() {
+      currentIdx = 0;
+      score = 0;
+      scoreBadge.textContent = '✦ 0';
+      endScreen.classList.remove('visible');
+      hint.style.display = '';
+      loadExercise(0);
+    }
 
-/* ═══════════════════════════════════
-   UTILS
-═══════════════════════════════════ */
-const shuffle = a => {
-  const b=[...a];
-  for(let i=b.length-1;i>0;i--){const j=0|Math.random()*(i+1);[b[i],b[j]]=[b[j],b[i]];}
-  return b;
-};
-const pad = n => String(n).padStart(3,'0');
+    // ── Eventos del marcador AR ───────────────────────────
+    function initMarkerEvents() {
+      const marker = document.getElementById('hiro-marker');
+      if (!marker) {
+        setTimeout(initMarkerEvents, 500);
+        return;
+      }
 
-/* ═══════════════════════════════════
-   DOM REFS
-═══════════════════════════════════ */
-const $ = id => document.getElementById(id);
-const tEq    = () => $('t-eq');
-const tLabel = () => $('t-label');
+      marker.addEventListener('markerFound', () => {
+        markerVisible = true;
+        hint.style.display = 'none';
+        if (currentIdx < exercises.length) {
+          panel.classList.remove('hidden');
+        }
+      });
 
-const BTN_IDS  = ['a','b','c'];
-const BG_IDS   = ['bg-a','bg-b','bg-c'];
-const TEXT_IDS = ['t-a','t-b','t-c'];
+      marker.addEventListener('markerLost', () => {
+        markerVisible = false;
+        panel.classList.add('hidden');
+        if (currentIdx < exercises.length) {
+          hint.style.display = '';
+        }
+      });
+    }
 
-/* ═══════════════════════════════════
-   LOAD EXERCISE INTO 3D SCENE
-═══════════════════════════════════ */
-function loadExercise() {
-  const ex = EXERCISES[S.idx];
-  S.locked = false;
-  S.order  = shuffle([0,1,2]);
+    // ── Init ──────────────────────────────────────────────
+    loadExercise(0);
 
-  // Panel text
-  tEq().setAttribute('value', ex.eq);
-  tEq().setAttribute('color', '#00ff88');
-  tLabel().setAttribute('value', `\u25C8 EJERCICIO ${String(S.idx+1).padStart(2,'0')}/10`);
+    // Esperar a que A-Frame esté listo
+    document.querySelector('a-scene').addEventListener('loaded', () => {
+      initMarkerEvents();
+    });
 
-  // Buttons
-  S.order.forEach((optIdx, btnIdx) => {
-    const val = ex.opts[optIdx];
-    $(TEXT_IDS[btnIdx]).setAttribute('value', `${KEYS[btnIdx]}:  ${val >= 0 ? val : val}`);
-    $(TEXT_IDS[btnIdx]).setAttribute('color', '#cffde4');
-    $(BG_IDS[btnIdx]).setAttribute('color', '#020c06');
-    $(BG_IDS[btnIdx]).setAttribute('opacity','0.95');
-    $('btn-'+BTN_IDS[btnIdx]).setAttribute('visible','true');
-  });
-
-  buildPips();
-}
-
-/* ═══════════════════════════════════
-   PROGRESS PIPS (HUD)
-═══════════════════════════════════ */
-function buildPips() {
-  const c = $('pips'); c.innerHTML='';
-  EXERCISES.forEach((_,i)=>{
-    const d=document.createElement('div');
-    d.className='pip'+(i<S.idx?' done':i===S.idx?' active':'');
-    c.appendChild(d);
-  });
-}
-
-/* ═══════════════════════════════════
-   HUD UPDATE
-═══════════════════════════════════ */
-function updateHUD() {
-  $('sv-score').textContent  = pad(S.score);
-  $('sv-streak').textContent = '\xD7'+S.streak;
-}
-
-/* ═══════════════════════════════════
-   SCREEN FLASH
-═══════════════════════════════════ */
-function flash(type) {
-  const el=$('flash');
-  el.className=type;
-  void el.offsetWidth;
-  el.classList.add('pop');
-  el.addEventListener('animationend',()=>{el.className='';},{once:true});
-}
-
-/* ═══════════════════════════════════
-   3D SPARKS (esferas que explotan)
-═══════════════════════════════════ */
-function spawnSparks(color='#00ff88') {
-  const container = $('sparks');
-  for(let i=0;i<14;i++){
-    const sp = document.createElement('a-sphere');
-    sp.setAttribute('radius', (0.02+Math.random()*0.035).toFixed(3));
-    sp.setAttribute('color', i%3===0?'#00e5ff':color);
-    sp.setAttribute('material','shader:flat;transparent:true;opacity:0.9');
-    const angle  = (i/14)*Math.PI*2;
-    const dist   = 0.35+Math.random()*0.45;
-    const tx     = (Math.cos(angle)*dist).toFixed(3);
-    const ty     = (0.8+Math.random()*0.6).toFixed(3);
-    const tz     = (Math.sin(angle)*dist).toFixed(3);
-    sp.setAttribute('position','0 0.8 0');
-    sp.setAttribute('animation',
-      `property:position; to:${tx} ${ty} ${tz}; dur:${500+Math.random()*400|0}; easing:easeOutQuad`);
-    sp.setAttribute('animation__fade',
-      `property:material.opacity; from:0.9; to:0; dur:700; easing:easeInQuad`);
-    container.appendChild(sp);
-    setTimeout(()=>sp.parentNode&&sp.parentNode.removeChild(sp), 850);
-  }
-}
-
-/* ═══════════════════════════════════
-   CHECK ANSWER
-═══════════════════════════════════ */
-function checkAnswer(btnIdx) {
-  if(S.locked) return;
-  const ex = EXERCISES[S.idx];
-  const optIdx = S.order[btnIdx];
-  const chosen = ex.opts[optIdx];
-  const ok     = chosen === ex.ans;
-  S.locked = true;
-
-  const bgEl   = $(BG_IDS[btnIdx]);
-  const txtEl  = $(TEXT_IDS[btnIdx]);
-
-  if(ok) {
-    /* ── CORRECT ── */
-    S.streak++;
-    S.best = Math.max(S.best, S.streak);
-    const mul = S.streak>=3?3:S.streak>=2?2:1;
-    S.score  += 100*mul;
-
-    bgEl.setAttribute('color','#00ff88');
-    bgEl.setAttribute('opacity','0.25');
-    txtEl.setAttribute('color','#00ff88');
-    tEq().setAttribute('color','#00ff88');
-
-    // Panel border flash
-    $('panel-border').setAttribute('opacity','0.7');
-    $('panel-border').setAttribute('color','#00ff88');
-    setTimeout(()=>{
-      $('panel-border').setAttribute('opacity','0.22');
-      $('panel-border').setAttribute('color','#00ff88');
-    },1200);
-
-    flash('g');
-    spawnSparks('#00ff88');
-    updateHUD();
-
-    setTimeout(()=>{
-      S.idx++;
-      if(S.idx>=EXERCISES.length){ showFinish(); return; }
-      loadExercise();
-    }, 1500);
-
-  } else {
-    /* ── WRONG ── */
-    S.streak = 0;
-    bgEl.setAttribute('color','#ff2255');
-    bgEl.setAttribute('opacity','0.25');
-    txtEl.setAttribute('color','#ff2255');
-
-    flash('r');
-    updateHUD();
-
-    // Re-enable after short delay, disable this button
-    setTimeout(()=>{
-      bgEl.setAttribute('color','#020c06');
-      bgEl.setAttribute('opacity','0.95');
-      txtEl.setAttribute('color','#444444');
-      $('btn-'+BTN_IDS[btnIdx]).setAttribute('visible','false');
-      S.locked=false;
-    }, 900);
-  }
-}
-
-/* ═══════════════════════════════════
-   FINISH
-═══════════════════════════════════ */
-function showFinish(){
-  $('f-pts').textContent = pad(S.score);
-  $('f-streak').textContent = 'Mejor racha: \xD7'+S.best;
-  $('finish').classList.add('show');
-}
-function restartGame(){
-  S={idx:0,score:0,streak:0,best:0,locked:false,order:[]};
-  $('finish').classList.remove('show');
-  updateHUD();
-  loadExercise();
-}
-
-/* ═══════════════════════════════════
-   MARKER FOUND / LOST (2D overlay)
-═══════════════════════════════════ */
-document.addEventListener('DOMContentLoaded',()=>{
-  const marker = $('hiro-marker');
-  const lost   = $('lost-overlay');
-  if(!marker) return;
-
-  // Initially show "looking for marker"
-  lost.classList.add('show');
-
-  marker.addEventListener('markerFound', ()=>{
-    lost.classList.remove('show');
-  });
-  marker.addEventListener('markerLost', ()=>{
-    lost.classList.add('show');
-  });
-
-  /* ── Click/touch on 3D buttons via raycaster ── */
-  ['a','b','c'].forEach((id,i)=>{
-    const ent = $('btn-'+id);
-    if(!ent) return;
-    ent.addEventListener('click',()=>checkAnswer(i));
-    // Fallback: touchstart on the canvas relayed by AR.js cursor
-    ent.addEventListener('mousedown',()=>checkAnswer(i));
-  });
-});
-
-/* ═══════════════════════════════════
-   INTRO → START
-═══════════════════════════════════ */
-$('btn-start').addEventListener('click', ()=>{
-  $('intro').style.display='none';
-  updateHUD();
-  loadExercise();
-});
-
-$('btn-restart').addEventListener('click', restartGame);
-
-/* ═══════════════════════════════════
-   SCENE LOADED
-═══════════════════════════════════ */
-document.querySelector('a-scene').addEventListener('loaded', ()=>{
-  console.log('[MathXR] A-Frame scene loaded ✓');
-});
-</script>
+    // Fallback si ya cargó
+    if (document.querySelector('a-scene').hasLoaded) {
+      initMarkerEvents();
+    }
+  </script>
 </body>
 </html>
