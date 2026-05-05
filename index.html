@@ -5,10 +5,163 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>AR Álgebra | Hacker Mode</title>
 
-  <!-- A-Frame 1.2.0 estable -->
-  <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1.2.0/dist/aframe.min.js"></script>
-  <!-- AR.js compatible con A-Frame 1.2.0 -->
-  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  <!--
+    BOOT STRATEGY:
+    1. getUserMedia se ejecuta PRIMERO (antes de cargar A-Frame/AR.js).
+    2. El navegador muestra el diálogo de permiso de cámara nativo.
+    3. Solo cuando el permiso es concedido se inyectan los scripts de AR.
+    4. Esto evita que AR.js intente acceder a la cámara antes de tener permiso,
+       lo que causa la pantalla negra en Android/HyperOS.
+  -->
+  <script>
+    // ── Bootstrap de cámara ──────────────────────────────────────────────────
+    // Se ejecuta inline, antes de que nada más cargue.
+    (function bootCamera() {
+
+      // Pantalla de splash mientras pedimos permisos
+      const splash = document.createElement('div');
+      splash.id = 'cam-splash';
+      splash.style.cssText = `
+        position:fixed; inset:0; z-index:9999;
+        background:#000d00;
+        display:flex; flex-direction:column;
+        justify-content:center; align-items:center; gap:24px;
+        font-family:'Courier New',monospace; color:#00ff88;
+        text-align:center; padding:30px;
+      `;
+      splash.innerHTML = `
+        <div style="font-size:40px; animation: spin 1.2s linear infinite; display:inline-block;">⬡</div>
+        <div style="font-size:11px; letter-spacing:4px; color:#00cc66;">INICIALIZANDO SISTEMA AR</div>
+        <div id="cam-status" style="font-size:14px; letter-spacing:2px;">
+          Solicitando acceso a cámara trasera...
+        </div>
+        <style>
+          @keyframes spin { to { transform: rotate(360deg); } }
+        </style>
+      `;
+      // Insertamos antes de que el body tenga contenido visible
+      document.addEventListener('DOMContentLoaded', () => {
+        document.body.insertBefore(splash, document.body.firstChild);
+      });
+
+      // Guardar stream globalmente para que AR.js lo reutilice
+      window.__arCameraStream = null;
+
+      function setStatus(msg, isError) {
+        const el = document.getElementById('cam-status');
+        if (el) {
+          el.textContent = msg;
+          el.style.color = isError ? '#ff2244' : '#00ff88';
+        }
+      }
+
+      function injectARScripts() {
+        // Inyectamos A-Frame y AR.js SOLO tras obtener permiso de cámara
+        return new Promise((resolve, reject) => {
+          const aframe = document.createElement('script');
+          aframe.src = 'https://cdn.jsdelivr.net/gh/aframevr/aframe@1.2.0/dist/aframe.min.js';
+          aframe.onload = () => {
+            const arjs = document.createElement('script');
+            arjs.src = 'https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js';
+            arjs.onload  = resolve;
+            arjs.onerror = () => reject(new Error('AR.js no cargó'));
+            document.head.appendChild(arjs);
+          };
+          aframe.onerror = () => reject(new Error('A-Frame no cargó'));
+          document.head.appendChild(aframe);
+        });
+      }
+
+      function removeSplash() {
+        const s = document.getElementById('cam-splash');
+        if (s) s.remove();
+      }
+
+      async function init() {
+        // Constraints: cámara trasera, resolución óptima para AR en móvil
+        const constraints = {
+          audio: false,
+          video: {
+            facingMode: { exact: 'environment' },
+            width:  { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+
+        // Fallback si 'exact' es rechazado por el dispositivo
+        const constraintsFallback = {
+          audio: false,
+          video: { facingMode: 'environment' }
+        };
+
+        try {
+          // Intento 1: cámara trasera estricta
+          let stream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+          } catch (strictErr) {
+            console.warn('[AR Boot] exact facingMode falló, usando fallback:', strictErr.message);
+            setStatus('Ajustando configuración de cámara...');
+            stream = await navigator.mediaDevices.getUserMedia(constraintsFallback);
+          }
+
+          // Guardamos el stream; AR.js lo tomará del track activo
+          window.__arCameraStream = stream;
+          console.log('[AR Boot] ✓ Permiso de cámara concedido. Track:', stream.getVideoTracks()[0]?.label);
+
+          setStatus('✓ Cámara lista. Cargando motor AR...');
+
+          // Ahora sí cargamos A-Frame + AR.js
+          await injectARScripts();
+
+          setStatus('✓ Motor AR listo. Iniciando escena...');
+
+          // Pequeña pausa para que A-Frame registre sus componentes
+          await new Promise(r => setTimeout(r, 300));
+
+          removeSplash();
+
+        } catch (err) {
+          console.error('[AR Boot] Error de cámara:', err);
+
+          let msg = '✗ Sin acceso a cámara.';
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            msg = '✗ Permiso denegado. Ve a Ajustes del navegador y permite la cámara para este sitio, luego recarga.';
+          } else if (err.name === 'NotFoundError') {
+            msg = '✗ No se encontró cámara trasera en este dispositivo.';
+          } else if (err.name === 'NotReadableError') {
+            msg = '✗ La cámara está en uso por otra app. Ciérrala y recarga.';
+          } else if (err.name === 'SecurityError') {
+            msg = '✗ Error de seguridad: asegúrate de abrir el sitio por HTTPS.';
+          }
+
+          setStatus(msg, true);
+
+          // Botón de reintento
+          const retryBtn = document.createElement('button');
+          retryBtn.textContent = '[ REINTENTAR ]';
+          retryBtn.style.cssText = `
+            margin-top:10px; padding:12px 28px;
+            background:transparent; border:1px solid #00ff88;
+            color:#00ff88; font-family:'Courier New',monospace;
+            font-size:14px; letter-spacing:3px; cursor:pointer;
+            border-radius:4px;
+          `;
+          retryBtn.onclick = () => location.reload();
+          const splash = document.getElementById('cam-splash');
+          if (splash) splash.appendChild(retryBtn);
+        }
+      }
+
+      // Arrancar tan pronto como el DOM esté disponible
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+
+    })();
+  </script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
