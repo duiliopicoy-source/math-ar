@@ -3,526 +3,253 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>AR Álgebra | Hacker Mode</title>
+  <title>AR Álgebra</title>
 
   <!--
-    BOOT STRATEGY:
-    1. getUserMedia se ejecuta PRIMERO (antes de cargar A-Frame/AR.js).
-    2. El navegador muestra el diálogo de permiso de cámara nativo.
-    3. Solo cuando el permiso es concedido se inyectan los scripts de AR.
-    4. Esto evita que AR.js intente acceder a la cámara antes de tener permiso,
-       lo que causa la pantalla negra en Android/HyperOS.
+    ORDEN CRÍTICO: A-Frame PRIMERO, AR.js DESPUÉS.
+    AR.js registra sus componentes sobre A-Frame al cargarse;
+    si se invierten, el handshake falla y la cámara no arranca.
   -->
-  <script>
-    // ── Bootstrap de cámara ──────────────────────────────────────────────────
-    // Se ejecuta inline, antes de que nada más cargue.
-    (function bootCamera() {
-
-      // Pantalla de splash mientras pedimos permisos
-      const splash = document.createElement('div');
-      splash.id = 'cam-splash';
-      splash.style.cssText = `
-        position:fixed; inset:0; z-index:9999;
-        background:#000d00;
-        display:flex; flex-direction:column;
-        justify-content:center; align-items:center; gap:24px;
-        font-family:'Courier New',monospace; color:#00ff88;
-        text-align:center; padding:30px;
-      `;
-      splash.innerHTML = `
-        <div style="font-size:40px; animation: spin 1.2s linear infinite; display:inline-block;">⬡</div>
-        <div style="font-size:11px; letter-spacing:4px; color:#00cc66;">INICIALIZANDO SISTEMA AR</div>
-        <div id="cam-status" style="font-size:14px; letter-spacing:2px;">
-          Solicitando acceso a cámara trasera...
-        </div>
-        <style>
-          @keyframes spin { to { transform: rotate(360deg); } }
-        </style>
-      `;
-      // Insertamos antes de que el body tenga contenido visible
-      document.addEventListener('DOMContentLoaded', () => {
-        document.body.insertBefore(splash, document.body.firstChild);
-      });
-
-      // Guardar stream globalmente para que AR.js lo reutilice
-      window.__arCameraStream = null;
-
-      function setStatus(msg, isError) {
-        const el = document.getElementById('cam-status');
-        if (el) {
-          el.textContent = msg;
-          el.style.color = isError ? '#ff2244' : '#00ff88';
-        }
-      }
-
-      function injectARScripts() {
-        // Inyectamos A-Frame y AR.js SOLO tras obtener permiso de cámara
-        return new Promise((resolve, reject) => {
-          const aframe = document.createElement('script');
-          aframe.src = 'https://cdn.jsdelivr.net/gh/aframevr/aframe@1.2.0/dist/aframe.min.js';
-          aframe.onload = () => {
-            const arjs = document.createElement('script');
-            arjs.src = 'https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js';
-            arjs.onload  = resolve;
-            arjs.onerror = () => reject(new Error('AR.js no cargó'));
-            document.head.appendChild(arjs);
-          };
-          aframe.onerror = () => reject(new Error('A-Frame no cargó'));
-          document.head.appendChild(aframe);
-        });
-      }
-
-      function removeSplash() {
-        const s = document.getElementById('cam-splash');
-        if (s) s.remove();
-      }
-
-      async function init() {
-        // Constraints: cámara trasera, resolución óptima para AR en móvil
-        const constraints = {
-          audio: false,
-          video: {
-            facingMode: { exact: 'environment' },
-            width:  { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        };
-
-        // Fallback si 'exact' es rechazado por el dispositivo
-        const constraintsFallback = {
-          audio: false,
-          video: { facingMode: 'environment' }
-        };
-
-        try {
-          // Intento 1: cámara trasera estricta
-          let stream;
-          try {
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-          } catch (strictErr) {
-            console.warn('[AR Boot] exact facingMode falló, usando fallback:', strictErr.message);
-            setStatus('Ajustando configuración de cámara...');
-            stream = await navigator.mediaDevices.getUserMedia(constraintsFallback);
-          }
-
-          // Guardamos el stream; AR.js lo tomará del track activo
-          window.__arCameraStream = stream;
-          console.log('[AR Boot] ✓ Permiso de cámara concedido. Track:', stream.getVideoTracks()[0]?.label);
-
-          setStatus('✓ Cámara lista. Cargando motor AR...');
-
-          // Ahora sí cargamos A-Frame + AR.js
-          await injectARScripts();
-
-          setStatus('✓ Motor AR listo. Iniciando escena...');
-
-          // Pequeña pausa para que A-Frame registre sus componentes
-          await new Promise(r => setTimeout(r, 300));
-
-          removeSplash();
-
-        } catch (err) {
-          console.error('[AR Boot] Error de cámara:', err);
-
-          let msg = '✗ Sin acceso a cámara.';
-          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-            msg = '✗ Permiso denegado. Ve a Ajustes del navegador y permite la cámara para este sitio, luego recarga.';
-          } else if (err.name === 'NotFoundError') {
-            msg = '✗ No se encontró cámara trasera en este dispositivo.';
-          } else if (err.name === 'NotReadableError') {
-            msg = '✗ La cámara está en uso por otra app. Ciérrala y recarga.';
-          } else if (err.name === 'SecurityError') {
-            msg = '✗ Error de seguridad: asegúrate de abrir el sitio por HTTPS.';
-          }
-
-          setStatus(msg, true);
-
-          // Botón de reintento
-          const retryBtn = document.createElement('button');
-          retryBtn.textContent = '[ REINTENTAR ]';
-          retryBtn.style.cssText = `
-            margin-top:10px; padding:12px 28px;
-            background:transparent; border:1px solid #00ff88;
-            color:#00ff88; font-family:'Courier New',monospace;
-            font-size:14px; letter-spacing:3px; cursor:pointer;
-            border-radius:4px;
-          `;
-          retryBtn.onclick = () => location.reload();
-          const splash = document.getElementById('cam-splash');
-          if (splash) splash.appendChild(retryBtn);
-        }
-      }
-
-      // Arrancar tan pronto como el DOM esté disponible
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-      } else {
-        init();
-      }
-
-    })();
-  </script>
+  <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1.2.0/dist/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.3.3/aframe/build/aframe-ar.js"></script>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
-
-    :root {
-      --neon: #00ff88;
-      --neon-dim: #00cc66;
-      --neon-glow: rgba(0, 255, 136, 0.3);
-      --dark: #000d00;
-      --panel: rgba(0, 18, 0, 0.92);
-      --border: #00ff88;
-      --wrong: #ff2244;
-      --correct: #00ffcc;
-      --btn-bg: rgba(0, 255, 136, 0.08);
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ── Reset mínimo. Sin filtros ni capas sobre el video de cámara. ── */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      background: var(--dark);
-      font-family: 'Share Tech Mono', monospace;
-      color: var(--neon);
-      overflow: hidden;
-      height: 100dvh;
-      width: 100vw;
-    }
-
-    /* ── SCANLINES overlay ── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0,0,0,0.12) 2px,
-        rgba(0,0,0,0.12) 4px
-      );
-      pointer-events: none;
-      z-index: 999;
-    }
-
-    /* ── HUD superior ── */
-    #hud {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 16px;
-      background: rgba(0,10,0,0.75);
-      border-bottom: 1px solid var(--neon-dim);
-      z-index: 500;
-      backdrop-filter: blur(4px);
-    }
-
-    #hud .logo {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 13px;
-      letter-spacing: 3px;
-      text-shadow: 0 0 10px var(--neon);
-    }
-
-    #hud .counter {
-      font-size: 12px;
-      color: var(--neon-dim);
-      letter-spacing: 2px;
-    }
-
-    #score-badge {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 13px;
-      color: var(--neon);
-      text-shadow: 0 0 8px var(--neon);
-    }
-
-    /* ── Panel de ejercicio (UI flotante sobre la vista) ── */
-    #exercise-panel {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      padding: 14px 16px 24px;
-      background: var(--panel);
-      border-top: 1px solid var(--border);
-      z-index: 500;
-      backdrop-filter: blur(6px);
-      transition: opacity 0.4s ease;
-    }
-
-    #exercise-panel.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    #marker-hint {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      padding: 18px;
-      text-align: center;
-      background: rgba(0,10,0,0.85);
-      border-top: 1px solid var(--neon-dim);
-      z-index: 500;
-      font-size: 14px;
-      color: var(--neon-dim);
-      letter-spacing: 1px;
-      backdrop-filter: blur(4px);
-      animation: blink 1.8s infinite;
-    }
-
-    @keyframes blink {
-      0%,100% { opacity: 1; }
-      50%      { opacity: 0.4; }
-    }
-
-    #question-label {
-      font-size: 11px;
-      color: var(--neon-dim);
-      letter-spacing: 3px;
-      margin-bottom: 6px;
-    }
-
-    #question-text {
-      font-family: 'Orbitron', sans-serif;
-      font-size: clamp(16px, 4vw, 22px);
-      color: var(--neon);
-      text-shadow: 0 0 12px var(--neon);
-      margin-bottom: 14px;
-      min-height: 50px;
-      display: flex;
-      align-items: center;
-    }
-
-    #feedback {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 14px;
-      min-height: 22px;
-      margin-bottom: 10px;
-      letter-spacing: 2px;
-      transition: color 0.2s;
-    }
-
-    #feedback.correct { color: var(--correct); text-shadow: 0 0 10px var(--correct); }
-    #feedback.wrong   { color: var(--wrong);   text-shadow: 0 0 10px var(--wrong); }
-
-    #options-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
-    .opt-btn {
-      background: var(--btn-bg);
-      border: 1px solid var(--neon-dim);
-      color: var(--neon);
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 16px;
-      padding: 14px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      letter-spacing: 1px;
-      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-    }
-
-    .opt-btn:active {
-      transform: scale(0.96);
-    }
-
-    .opt-btn:hover, .opt-btn:focus {
-      background: rgba(0, 255, 136, 0.18);
-      border-color: var(--neon);
-      box-shadow: 0 0 14px var(--neon-glow);
-      outline: none;
-    }
-
-    .opt-btn.correct-flash {
-      background: rgba(0, 255, 204, 0.25);
-      border-color: var(--correct);
-      box-shadow: 0 0 20px rgba(0,255,204,0.5);
-      color: var(--correct);
-    }
-
-    .opt-btn.wrong-flash {
-      background: rgba(255, 34, 68, 0.2);
-      border-color: var(--wrong);
-      box-shadow: 0 0 14px rgba(255,34,68,0.4);
-      color: var(--wrong);
-    }
-
-    /* ── Pantalla de fin ── */
-    #end-screen {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,8,0,0.96);
-      z-index: 600;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      gap: 20px;
-      text-align: center;
-      padding: 30px;
-    }
-
-    #end-screen.visible { display: flex; }
-
-    #end-screen h1 {
-      font-family: 'Orbitron', sans-serif;
-      font-size: clamp(24px, 7vw, 42px);
-      color: var(--neon);
-      text-shadow: 0 0 24px var(--neon), 0 0 60px var(--neon-glow);
-      animation: pulse 1.5s infinite alternate;
-    }
-
-    @keyframes pulse {
-      from { text-shadow: 0 0 20px var(--neon); }
-      to   { text-shadow: 0 0 40px var(--neon), 0 0 80px var(--neon-glow); }
-    }
-
-    #end-screen p {
-      font-size: 16px;
-      color: var(--neon-dim);
-      letter-spacing: 2px;
-    }
-
-    #restart-btn {
       background: transparent;
-      border: 1px solid var(--neon);
-      color: var(--neon);
-      font-family: 'Orbitron', sans-serif;
-      font-size: 14px;
-      padding: 14px 32px;
-      letter-spacing: 3px;
-      cursor: pointer;
-      border-radius: 4px;
-      margin-top: 10px;
-      box-shadow: 0 0 16px var(--neon-glow);
-      transition: background 0.2s, box-shadow 0.2s;
-      touch-action: manipulation;
+      font-family: 'Courier New', Courier, monospace;
+      overflow: hidden;
     }
 
-    #restart-btn:active {
-      background: rgba(0,255,136,0.15);
-      box-shadow: 0 0 30px var(--neon-glow);
-    }
-
-    /* ── A-Frame ocupa todo el fondo ── */
+    /* A-Frame necesita el canvas libre, sin nada encima que bloquee el video */
     a-scene {
       position: fixed !important;
       top: 0; left: 0;
-      width: 100vw !important;
-      height: 100dvh !important;
+      width: 100% !important;
+      height: 100% !important;
       z-index: 0;
     }
 
-    .a-enter-vr { display: none !important; }
+    .a-enter-vr,
     .a-loader-title { display: none !important; }
+
+    /* ── HUD superior: liviano, sin backdrop-filter (bug en MIUI/HyperOS) ── */
+    #hud {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 44px;
+      background: rgba(0, 10, 0, 0.80);
+      border-bottom: 1px solid #00cc55;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      z-index: 100;
+    }
+    #hud span { color: #00ff88; font-size: 13px; letter-spacing: 2px; }
+
+    /* ── Hint ── */
+    #hint {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      padding: 16px;
+      background: rgba(0, 10, 0, 0.80);
+      color: #00cc55;
+      font-size: 13px;
+      letter-spacing: 1px;
+      text-align: center;
+      z-index: 100;
+      border-top: 1px solid #00cc55;
+    }
+
+    /* ── Panel de ejercicio: oculto hasta markerFound ── */
+    #panel {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(0, 10, 0, 0.88);
+      border-top: 1px solid #00ff88;
+      padding: 12px 14px 20px;
+      z-index: 100;
+    }
+
+    #question {
+      color: #00ff88;
+      font-size: 15px;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+
+    #feedback {
+      font-size: 13px;
+      min-height: 20px;
+      margin-bottom: 10px;
+      letter-spacing: 1px;
+    }
+    #feedback.ok  { color: #00ffcc; }
+    #feedback.err { color: #ff3355; }
+
+    /*
+      Botonera HTML nativa: grid 2×2.
+      Sin z-index alto ni pointer-events manipulados en padres.
+      El evento click llega directamente al botón sin interferir con el canvas.
+    */
+    #options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    #options button {
+      background: rgba(0, 255, 136, 0.07);
+      border: 1px solid #00aa44;
+      color: #00ff88;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 15px;
+      padding: 13px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      touch-action: manipulation;          /* elimina delay 300ms en móvil */
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #options button.ok {
+      border-color: #00ffcc;
+      color: #00ffcc;
+      background: rgba(0, 255, 200, 0.15);
+    }
+    #options button.err {
+      border-color: #ff3355;
+      color: #ff3355;
+      background: rgba(255, 50, 80, 0.12);
+    }
+
+    /* ── Pantalla final ── */
+    #endscreen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 8, 0, 0.96);
+      color: #00ff88;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      gap: 16px;
+      z-index: 200;
+      padding: 30px;
+    }
+    #endscreen.show { display: flex; }
+    #endscreen h2 { font-size: 26px; letter-spacing: 4px; }
+    #endscreen p  { font-size: 14px; color: #00aa44; letter-spacing: 2px; }
+
+    #endscreen button {
+      margin-top: 14px;
+      background: transparent;
+      border: 1px solid #00ff88;
+      color: #00ff88;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      padding: 12px 28px;
+      letter-spacing: 3px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
   </style>
 </head>
 <body>
 
-  <!-- ══════════════ HUD ══════════════ -->
+  <!-- HUD -->
   <div id="hud">
-    <span class="logo">▶ AR_ALGEBRA</span>
-    <span class="counter" id="progress-counter">EJ 1 / 10</span>
-    <span id="score-badge">✦ 0</span>
+    <span>▶ AR_ALGEBRA</span>
+    <span id="prog">EJ 1/10</span>
+    <span id="score">✦ 0</span>
   </div>
 
-  <!-- ══════════════ HINT (visible cuando no hay marcador) ══════════════ -->
-  <div id="marker-hint">
-    [ APUNTA LA CÁMARA AL MARCADOR HIRO ]
-  </div>
+  <!-- Hint -->
+  <div id="hint">[ APUNTA AL MARCADOR HIRO ]</div>
 
-  <!-- ══════════════ PANEL DE EJERCICIO ══════════════ -->
-  <div id="exercise-panel" class="hidden">
-    <div id="question-label">// RESUELVE:</div>
-    <div id="question-text">Cargando...</div>
+  <!-- Panel ejercicio -->
+  <div id="panel">
+    <div id="question">Cargando...</div>
     <div id="feedback"></div>
-    <div id="options-grid"></div>
+    <div id="options"></div>
   </div>
 
-  <!-- ══════════════ PANTALLA FINAL ══════════════ -->
-  <div id="end-screen">
-    <h1>MISIÓN COMPLETA</h1>
-    <p id="final-score">ACIERTOS: 0 / 10</p>
-    <p style="font-size:12px; color:#00aa44; letter-spacing:1px;">Sistema de álgebra terminado exitosamente.</p>
-    <button id="restart-btn" onclick="restartApp()">[ REINICIAR ]</button>
+  <!-- Pantalla final -->
+  <div id="endscreen">
+    <h2>MISIÓN COMPLETA</h2>
+    <p id="finalscore">ACIERTOS: 0 / 10</p>
+    <button onclick="restart()">[ REINICIAR ]</button>
   </div>
 
-  <!-- ══════════════ A-FRAME SCENE ══════════════ -->
   <!--
-    Configuración probada para evitar pantalla negra en Android:
-    - logarithmicDepthBuffer: false  → evita glitch en GPU móvil
-    - precision: medium              → equilibrio rendimiento/calidad
-    - arjs sourceType: webcam        → fuerza cámara trasera
+    A-FRAME SCENE
+    ─────────────────────────────────────────────────────
+    renderer:
+      • logarithmicDepthBuffer:false → evita pantalla negra en GPU Adreno/Mali
+      • precision:medium             → alivia la GPU del Redmi
+      • alpha:true                   → fondo transparente para ver la cámara
+
+    arjs:
+      • sourceType:webcam            → usa la cámara del dispositivo
+      • videoSettings:{facingMode:'environment'}
+          Solo indica la cámara trasera; NO forzamos resolución.
+          AR.js negocia con el driver la mejor config disponible.
+          En HyperOS, imponer constraints de resolución rompe el handshake.
+      • debugUIEnabled:false         → sin overlay rojo (consume GPU)
+      • detectionMode:mono_and_matrix + matrixCodeType:3x3
+          Configuración más estable para el marcador Hiro impreso.
   -->
   <a-scene
     embedded
-    renderer="antialias: true; alpha: true; precision: medium; logarithmicDepthBuffer: false;"
-    vr-mode-ui="enabled: false"
-    arjs="sourceType: webcam;
-          facingMode: environment;
-          debugUIEnabled: false;
-          detectionMode: mono_and_matrix;
-          matrixCodeType: 3x3;"
-    gesture-detector
+    renderer="antialias:true; alpha:true; precision:medium; logarithmicDepthBuffer:false;"
+    vr-mode-ui="enabled:false"
+    arjs="sourceType:webcam;
+          videoSettings:{facingMode:'environment'};
+          debugUIEnabled:false;
+          detectionMode:mono_and_matrix;
+          matrixCodeType:3x3;"
   >
     <a-assets></a-assets>
 
-    <!-- Marcador Hiro -->
-    <a-marker
-      preset="hiro"
-      id="hiro-marker"
-      emitevents="true"
-      cursor="fuse: false; rayOrigin: mouse;"
-    >
-      <!-- Plano base neón bajo el texto 3D -->
+    <a-marker preset="hiro" id="hiro" emitevents="true">
+
+      <!-- Fondo del panel 3D -->
       <a-plane
         position="0 0.01 0"
         rotation="-90 0 0"
-        width="2.4" height="1.2"
-        color="#000d00"
-        opacity="0.82"
-        material="shader: flat;"
-      ></a-plane>
-
-      <!-- Borde neón decorativo -->
-      <a-plane
-        position="0 0.005 0"
-        rotation="-90 0 0"
-        width="2.5" height="1.3"
-        color="#00ff88"
-        opacity="0.18"
-        material="shader: flat;"
+        width="2.6" height="1.4"
+        color="#001200"
+        opacity="0.85"
+        material="shader:flat;"
       ></a-plane>
 
       <!-- Texto del ejercicio en AR -->
       <a-text
-        id="ar-exercise-text"
+        id="ar-q"
         value="AR ALGEBRA"
         align="center"
         color="#00ff88"
-        width="2.2"
-        position="0 0.55 0"
+        width="2.4"
+        position="0 0.62 0"
         rotation="-90 0 0"
-        font="https://cdn.aframe.io/fonts/ShareTechMono-Regular.fnt"
-        wrap-count="28"
+        wrap-count="26"
       ></a-text>
 
-      <!-- Indicador de estado en AR -->
+      <!-- Estado en AR -->
       <a-text
-        id="ar-status-text"
-        value="▶ Responde abajo"
+        id="ar-s"
+        value="Responde abajo"
         align="center"
-        color="#00cc66"
-        width="1.8"
-        position="0 0.15 0"
+        color="#00aa44"
+        width="2.0"
+        position="0 0.18 0"
         rotation="-90 0 0"
-        font="https://cdn.aframe.io/fonts/ShareTechMono-Regular.fnt"
-        wrap-count="32"
+        wrap-count="30"
       ></a-text>
 
     </a-marker>
@@ -530,202 +257,129 @@
     <a-entity camera></a-entity>
   </a-scene>
 
-  <!-- ══════════════ LÓGICA DE LA APP ══════════════ -->
   <script>
-    // ── Ejercicios de álgebra ──────────────────────────────
-    const exercises = [
-      {
-        q: "Si 3x = 21, ¿cuánto vale x?",
-        options: ["5", "7", "9", "6"],
-        answer: "7"
-      },
-      {
-        q: "Resuelve: 2x + 4 = 14",
-        options: ["3", "5", "4", "6"],
-        answer: "5"
-      },
-      {
-        q: "¿Qué valor de x satisface x² = 49?",
-        options: ["6", "8", "7", "5"],
-        answer: "7"
-      },
-      {
-        q: "Si x/4 = 3, entonces x = ?",
-        options: ["9", "16", "12", "7"],
-        answer: "12"
-      },
-      {
-        q: "Factoriza: x² - 9 = ?",
-        options: ["(x-3)(x+3)", "(x-3)²", "(x+9)(x-1)", "(x+3)²"],
-        answer: "(x-3)(x+3)"
-      },
-      {
-        q: "Si 5x - 3 = 22, ¿cuánto vale x?",
-        options: ["4", "5", "6", "3"],
-        answer: "5"
-      },
-      {
-        q: "¿Cuál es la pendiente de y = 3x + 7?",
-        options: ["7", "3", "-3", "1"],
-        answer: "3"
-      },
-      {
-        q: "Resuelve: 4(x - 2) = 16",
-        options: ["4", "6", "5", "8"],
-        answer: "6"
-      },
-      {
-        q: "Si x² + 2x = 0, una solución es x = ?",
-        options: ["1", "-1", "-2", "2"],
-        answer: "-2"
-      },
-      {
-        q: "¿Cuánto vale x en: 2x/3 = 8?",
-        options: ["10", "12", "14", "16"],
-        answer: "12"
-      }
+    /* ── Ejercicios ──────────────────────────────────── */
+    const EX = [
+      { q:"Si 3x = 21, ¿cuánto vale x?",            opts:["5","7","9","6"],                           ans:"7"         },
+      { q:"Resuelve: 2x + 4 = 14",                   opts:["3","5","4","6"],                           ans:"5"         },
+      { q:"¿Qué valor de x satisface x² = 49?",      opts:["6","8","7","5"],                           ans:"7"         },
+      { q:"Si x/4 = 3, entonces x = ?",              opts:["9","16","12","7"],                         ans:"12"        },
+      { q:"Factoriza: x² - 9",                       opts:["(x-3)(x+3)","(x-3)²","(x+9)(x-1)","(x+3)²"], ans:"(x-3)(x+3)" },
+      { q:"Si 5x - 3 = 22, ¿cuánto vale x?",        opts:["4","5","6","3"],                           ans:"5"         },
+      { q:"Pendiente de y = 3x + 7",                 opts:["7","3","-3","1"],                          ans:"3"         },
+      { q:"Resuelve: 4(x - 2) = 16",                opts:["4","6","5","8"],                           ans:"6"         },
+      { q:"Si x² + 2x = 0, una solución es x = ?",  opts:["1","-1","-2","2"],                         ans:"-2"        },
+      { q:"¿Cuánto vale x en: 2x/3 = 8?",           opts:["10","12","14","16"],                       ans:"12"        }
     ];
 
-    // ── Estado ────────────────────────────────────────────
-    let currentIdx = 0;
-    let score = 0;
-    let markerVisible = false;
-    let answered = false;
+    /* ── Estado ──────────────────────────────────────── */
+    let idx = 0, score = 0, answered = false;
 
-    // ── Referencias DOM ───────────────────────────────────
-    const panel        = document.getElementById('exercise-panel');
-    const hint         = document.getElementById('marker-hint');
-    const questionText = document.getElementById('question-text');
-    const feedbackEl   = document.getElementById('feedback');
-    const optionsGrid  = document.getElementById('options-grid');
-    const scoreBadge   = document.getElementById('score-badge');
-    const progressEl   = document.getElementById('progress-counter');
-    const endScreen    = document.getElementById('end-screen');
-    const finalScore   = document.getElementById('final-score');
-    const arText       = document.getElementById('ar-exercise-text');
-    const arStatus     = document.getElementById('ar-status-text');
+    const $panel    = document.getElementById('panel');
+    const $hint     = document.getElementById('hint');
+    const $question = document.getElementById('question');
+    const $feedback = document.getElementById('feedback');
+    const $options  = document.getElementById('options');
+    const $prog     = document.getElementById('prog');
+    const $score    = document.getElementById('score');
+    const $end      = document.getElementById('endscreen');
+    const $arQ      = document.getElementById('ar-q');
+    const $arS      = document.getElementById('ar-s');
 
-    // ── Cargar ejercicio ──────────────────────────────────
-    function loadExercise(idx) {
-      const ex = exercises[idx];
+    /* ── Cargar ejercicio ────────────────────────────── */
+    function load(i) {
       answered = false;
-      feedbackEl.textContent = '';
-      feedbackEl.className = '';
-      progressEl.textContent = `EJ ${idx + 1} / 10`;
-      questionText.textContent = ex.q;
+      const ex  = EX[i];
+      $prog.textContent     = 'EJ ' + (i + 1) + '/10';
+      $question.textContent = ex.q;
+      $feedback.textContent = '';
+      $feedback.className   = '';
 
-      // Actualizar texto en AR
-      if (arText) arText.setAttribute('value', ex.q);
-      if (arStatus) arStatus.setAttribute('value', `▶ Responde abajo`);
+      if ($arQ) $arQ.setAttribute('value', ex.q);
+      if ($arS) $arS.setAttribute('value', 'Responde abajo');
 
-      // Generar botones
-      optionsGrid.innerHTML = '';
-      ex.options.forEach(opt => {
-        const btn = document.createElement('button');
-        btn.className = 'opt-btn';
-        btn.textContent = opt;
-        btn.addEventListener('click', () => handleAnswer(opt, btn));
-        optionsGrid.appendChild(btn);
-      });
+      // innerHTML con botones HTML simples; onclick inline para evitar
+      // problemas de delegación de eventos sobre el canvas de AR.
+      $options.innerHTML = ex.opts.map(function(o) {
+        // Escapamos comillas simples para no romper el atributo onclick
+        var safe = o.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return '<button onclick="pick(this,\'' + safe + '\')">' + o + '</button>';
+      }).join('');
     }
 
-    // ── Manejar respuesta ─────────────────────────────────
-    function handleAnswer(selected, btn) {
+    /* ── Procesar respuesta ──────────────────────────── */
+    function pick(btn, selected) {
       if (answered) return;
       answered = true;
 
-      const ex = exercises[currentIdx];
-      const allBtns = optionsGrid.querySelectorAll('.opt-btn');
-      allBtns.forEach(b => b.disabled = true);
+      var ex      = EX[idx];
+      var allBtns = $options.querySelectorAll('button');
+      allBtns.forEach(function(b) { b.disabled = true; });
 
-      if (selected === ex.answer) {
+      if (selected === ex.ans) {
         score++;
-        btn.classList.add('correct-flash');
-        feedbackEl.textContent = '✦ ¡CORRECTO!';
-        feedbackEl.className = 'correct';
-        scoreBadge.textContent = `✦ ${score}`;
-        if (arStatus) arStatus.setAttribute('value', '✦ ¡CORRECTO!');
-
-        // Avanzar automáticamente
-        setTimeout(() => nextExercise(), 1500);
+        btn.classList.add('ok');
+        $feedback.textContent = '✦ CORRECTO';
+        $feedback.className   = 'ok';
+        $score.textContent    = '✦ ' + score;
+        if ($arS) $arS.setAttribute('value', '✦ CORRECTO!');
+        setTimeout(next, 1400);
       } else {
-        btn.classList.add('wrong-flash');
-        feedbackEl.textContent = `✗ ERROR — Era: ${ex.answer}`;
-        feedbackEl.className = 'wrong';
-        if (arStatus) arStatus.setAttribute('value', `Respuesta: ${ex.answer}`);
-
-        // Resaltar correcta
-        allBtns.forEach(b => {
-          if (b.textContent === ex.answer) b.classList.add('correct-flash');
+        btn.classList.add('err');
+        $feedback.textContent = '✗ ERA: ' + ex.ans;
+        $feedback.className   = 'err';
+        if ($arS) $arS.setAttribute('value', 'Era: ' + ex.ans);
+        allBtns.forEach(function(b) {
+          if (b.textContent.trim() === ex.ans) b.classList.add('ok');
         });
-        setTimeout(() => nextExercise(), 2200);
+        setTimeout(next, 2000);
       }
     }
 
-    // ── Siguiente ejercicio ───────────────────────────────
-    function nextExercise() {
-      currentIdx++;
-      if (currentIdx >= exercises.length) {
-        showEndScreen();
+    /* ── Avanzar ─────────────────────────────────────── */
+    function next() {
+      idx++;
+      if (idx >= EX.length) {
+        $panel.style.display = 'none';
+        $hint.style.display  = 'none';
+        $end.classList.add('show');
+        document.getElementById('finalscore').textContent = 'ACIERTOS: ' + score + ' / 10';
       } else {
-        loadExercise(currentIdx);
+        load(idx);
       }
     }
 
-    // ── Pantalla final ────────────────────────────────────
-    function showEndScreen() {
-      panel.classList.add('hidden');
-      hint.style.display = 'none';
-      endScreen.classList.add('visible');
-      finalScore.textContent = `ACIERTOS: ${score} / 10`;
+    /* ── Reiniciar ───────────────────────────────────── */
+    function restart() {
+      idx = 0; score = 0;
+      $score.textContent = '✦ 0';
+      $end.classList.remove('show');
+      $hint.style.display = '';
+      load(0);
     }
 
-    function restartApp() {
-      currentIdx = 0;
-      score = 0;
-      scoreBadge.textContent = '✦ 0';
-      endScreen.classList.remove('visible');
-      hint.style.display = '';
-      loadExercise(0);
-    }
+    /* ── Bind eventos del marcador ───────────────────── */
+    function bindMarker() {
+      var marker = document.getElementById('hiro');
+      if (!marker) { setTimeout(bindMarker, 400); return; }
 
-    // ── Eventos del marcador AR ───────────────────────────
-    function initMarkerEvents() {
-      const marker = document.getElementById('hiro-marker');
-      if (!marker) {
-        setTimeout(initMarkerEvents, 500);
-        return;
-      }
-
-      marker.addEventListener('markerFound', () => {
-        markerVisible = true;
-        hint.style.display = 'none';
-        if (currentIdx < exercises.length) {
-          panel.classList.remove('hidden');
-        }
+      marker.addEventListener('markerFound', function() {
+        $hint.style.display = 'none';
+        if (idx < EX.length) $panel.style.display = '';
       });
 
-      marker.addEventListener('markerLost', () => {
-        markerVisible = false;
-        panel.classList.add('hidden');
-        if (currentIdx < exercises.length) {
-          hint.style.display = '';
-        }
+      marker.addEventListener('markerLost', function() {
+        $panel.style.display = 'none';
+        if (idx < EX.length) $hint.style.display = '';
       });
     }
 
-    // ── Init ──────────────────────────────────────────────
-    loadExercise(0);
+    /* ── Init ────────────────────────────────────────── */
+    load(0);
 
-    // Esperar a que A-Frame esté listo
-    document.querySelector('a-scene').addEventListener('loaded', () => {
-      initMarkerEvents();
-    });
-
-    // Fallback si ya cargó
-    if (document.querySelector('a-scene').hasLoaded) {
-      initMarkerEvents();
-    }
+    var scene = document.querySelector('a-scene');
+    scene.addEventListener('loaded', bindMarker);
+    if (scene.hasLoaded) bindMarker();
   </script>
 </body>
 </html>
