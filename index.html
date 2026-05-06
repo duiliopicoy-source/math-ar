@@ -1,831 +1,611 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>AR Álgebra</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Álgebra en RA</title>
 
-  <!-- ORDEN CRÍTICO: A-Frame primero, MindAR después -->
-  <script src="https://cdn.jsdelivr.net/npm/aframe@1.2.0/dist/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <!-- A-Frame sin logarithmicDepthBuffer para evitar pantalla negra en HyperOS -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <!-- AR.js -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700&display=swap');
+    /* ─── Reset ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --g:    #00ff88;
-      --gdim: #00cc55;
-      --gbg:  rgba(0,255,136,0.08);
-      --dark: rgba(4,18,10,0.90);
-      --panel:rgba(6,22,12,0.93);
-      --gold: #ffd700;
+    body {
+      font-family: 'Share Tech Mono', monospace;
+      background: #000;
+      overflow: hidden;
+      height: 100dvh;
+      width: 100vw;
     }
 
-    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-
-    html, body {
-      width:100%; height:100%;
-      overflow:hidden;
-      background:transparent;   /* NUNCA negro — bloquea el video */
-      font-family:'Share Tech Mono', 'Courier New', monospace;
-      color:var(--g);
-    }
-
-    /* ── VIDEO de cámara (inyectado por MindAR) ─────────────────────────
-       z-index:-1 → debajo del canvas WebGL y de la UI HTML.
-       !important en todo porque MindAR puede sobreescribir estilos.      */
-    video {
-      position: absolute !important;
-      top:  0 !important;  left: 0 !important;
-      width:  100% !important;
-      height: 100% !important;
-      object-fit: cover !important;
-      z-index: -1 !important;
-      display: block !important;
-      background: transparent !important;
-    }
-
-    /* ── CANVAS WebGL (A-Frame) ─────────────────────────────────────────
-       Fondo transparente para que el video se vea a través.             */
-    canvas {
-      position: absolute !important;
-      top: 0 !important;  left: 0 !important;
-      width:  100% !important;
-      height: 100% !important;
-      z-index: 0 !important;
-      background: transparent !important;
-    }
-
-    /* ── A-SCENE ────────────────────────────────────────────────────── */
-    a-scene {
+    /* ─── Cámara AR: z-index negativo para que la UI quede encima ─── */
+    canvas, video {
       position: fixed !important;
-      inset: 0;
-      width:  100% !important;
+      top: 0; left: 0;
+      width: 100% !important;
       height: 100% !important;
-      z-index: 0;
-      background: transparent !important;
-    }
-    .a-enter-vr, .a-loader-title { display:none !important; }
-
-    /* ════════════════════════════════════════════════════
-       SPLASH — cubre todo durante el boot de la cámara
-    ════════════════════════════════════════════════════ */
-    #splash {
-      position:fixed; inset:0; z-index:800;
-      background:#000d06;
-      display:flex; flex-direction:column;
-      justify-content:center; align-items:center;
-      gap:20px; padding:28px; text-align:center;
-    }
-    #splash-icon {
-      font-size:46px;
-      animation:spin 1.3s linear infinite;
-      display:inline-block;
-    }
-    @keyframes spin { to { transform:rotate(360deg); } }
-
-    #splash-label { font-size:11px; letter-spacing:4px; color:var(--gdim); }
-    #splash-status { font-size:13px; letter-spacing:1px; line-height:1.7; max-width:320px; }
-
-    /* Botón manual "Iniciar Cámara" — aparece si autoplay falla */
-    #cam-btn {
-      display:none;
-      background:transparent;
-      border:1px solid var(--g);
-      color:var(--g);
-      font-family:inherit; font-size:14px;
-      letter-spacing:3px; padding:13px 30px;
-      cursor:pointer; border-radius:6px;
-      touch-action:manipulation;
-      box-shadow:0 0 14px rgba(0,255,136,.25);
-    }
-    #cam-btn:active { background:rgba(0,255,136,.1); }
-
-    /* Bloque de diagnóstico de error */
-    #err-box {
-      display:none;
-      background:#0b0002; border:1px solid #ff3355;
-      color:#ff3355; font-size:11px; line-height:1.8;
-      padding:12px 14px; border-radius:4px;
-      max-width:340px; width:100%;
-      text-align:left; word-break:break-all;
-    }
-    #retry-btn {
-      display:none;
-      background:transparent; border:1px solid #ff3355;
-      color:#ff3355; font-family:inherit;
-      font-size:12px; letter-spacing:2px;
-      padding:10px 22px; cursor:pointer;
-      touch-action:manipulation;
+      z-index: -1 !important;
     }
 
-    /* ════════════════════════════════════════════════════
-       HUD SUPERIOR — Puntos · barra de progreso · Racha
-    ════════════════════════════════════════════════════ */
+    /* ─── HUD: contenedor principal de la UI ─── */
     #hud {
-      display:none;              /* oculto hasta que la cámara arranque */
-      position:fixed;
-      top:0; left:0; right:0;
-      padding:10px 16px 8px;
-      background:rgba(0,8,4,0.72);
-      border-bottom:1px solid rgba(0,255,136,.2);
-      z-index:100;
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      pointer-events: none;
+      z-index: 10;
     }
 
-    /* Fila superior: PUNTOS — dots — RACHA */
-    .hud-row {
-      display:flex; align-items:center;
-      justify-content:space-between;
-      gap:10px;
+    /* ─── Feedback flash de pantalla ─── */
+    #flash {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9;
+      opacity: 0;
+      transition: opacity 0.1s ease;
+    }
+    #flash.green  { background: rgba(0,255,100,0.25); opacity: 1; }
+    #flash.red    { background: rgba(255,30,30,0.28);  opacity: 1; }
+    #flash.fade   { opacity: 0; }
+
+    /* ─── Borde neón de la pantalla ─── */
+    #neon-border {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 8;
+      border: 4px solid transparent;
+      border-radius: 0;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    #neon-border.green {
+      border-color: #00ff64;
+      box-shadow: inset 0 0 28px #00ff6455, 0 0 28px #00ff6455;
+    }
+    #neon-border.red {
+      border-color: #ff2222;
+      box-shadow: inset 0 0 28px #ff222255, 0 0 28px #ff222255;
     }
 
-    .hud-col { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
-    .hud-col.right { align-items:flex-end; }
-
-    .hud-label {
-      font-size:9px; letter-spacing:3px; color:var(--gdim);
+    /* ─── Score HUD ─── */
+    #score-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      padding: 10px 18px 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(180deg,rgba(0,0,0,0.72) 0%,transparent 100%);
+      z-index: 11;
+    }
+    #score-bar .label {
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: #00ff9d55;
+      text-transform: uppercase;
+    }
+    #score-display {
+      font-family: 'Orbitron', monospace;
+      font-size: 22px;
+      color: #00ff9d;
+      text-shadow: 0 0 12px #00ff9d, 0 0 28px #00ff9d88;
+      letter-spacing: 4px;
+    }
+    #question-counter {
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      color: #00d4ff88;
+      letter-spacing: 2px;
     }
 
-    /* Dígitos con borde estilo pixel-display */
-    #pts-display {
-      display:flex; gap:4px;
-    }
-    .digit {
-      width:26px; height:26px;
-      border:2px solid var(--g);
-      border-radius:3px;
-      display:flex; align-items:center; justify-content:center;
-      font-family:'Orbitron', monospace;
-      font-size:13px; color:var(--g);
-      box-shadow:0 0 6px rgba(0,255,136,.4), inset 0 0 4px rgba(0,255,136,.1);
-      transition:background .2s;
-    }
-    .digit.lit { background:rgba(0,255,136,.18); }
-
-    /* Racha — en dorado */
-    #streak-display {
-      font-family:'Orbitron', monospace;
-      font-size:20px; color:var(--gold);
-      letter-spacing:1px;
-      text-shadow:0 0 10px rgba(255,215,0,.5);
-    }
-    #streak-display span { font-size:13px; }
-
-    /* Barra de puntos (10 dots) */
-    #dots {
-      display:flex; gap:5px; align-items:center;
-      flex:1; justify-content:center;
-    }
-    .dot {
-      width:9px; height:9px; border-radius:50%;
-      border:1.5px solid rgba(0,255,136,.4);
-      background:transparent;
-      transition:background .3s, border-color .3s;
-    }
-    .dot.done  { background:var(--g);   border-color:var(--g); }
-    .dot.active{ background:var(--gdim);border-color:var(--gdim);
-                 box-shadow:0 0 6px var(--gdim); }
-
-    /* ════════════════════════════════════════════════════
-       PANEL CENTRAL — tarjeta del ejercicio
-    ════════════════════════════════════════════════════ */
-    #card {
-      display:none;
-      position:fixed;
-      /* Centrado vertical: justo arriba de los botones */
-      left:16px; right:16px;
-      top:50%; transform:translateY(-54%);
-      background:var(--panel);
-      border:1px solid rgba(0,255,136,.35);
-      border-radius:16px;
-      padding:18px 20px 20px;
-      z-index:100;
-      /* Esquinas brillantes */
-      box-shadow:
-        0 0 0 1px rgba(0,255,136,.08),
-        0 4px 40px rgba(0,0,0,.6),
-        inset 0 0 60px rgba(0,255,136,.03);
+    /* ─── Panel de opciones ─── */
+    #options-panel {
+      pointer-events: all;
+      padding: 0 14px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    /* Esquina decorativa top-left */
-    #card::before {
-      content:'';
-      position:absolute; top:-1px; left:-1px;
-      width:20px; height:20px;
-      border-top:2px solid var(--g);
-      border-left:2px solid var(--g);
-      border-radius:16px 0 0 0;
+    .hint-label {
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: #00d4ff66;
+      margin-bottom: 2px;
+      text-transform: uppercase;
     }
 
-    .card-meta {
-      display:flex; justify-content:space-between;
-      align-items:center; margin-bottom:14px;
+    .opt-btn {
+      width: 100%;
+      padding: 14px 10px;
+      border: 1.5px solid #00ff9d44;
+      border-radius: 6px;
+      background: rgba(0,0,0,0.72);
+      color: #00ff9d;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 17px;
+      letter-spacing: 2px;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+      text-align: center;
     }
-    .card-tag {
-      font-size:10px; letter-spacing:3px; color:var(--gdim);
+    .opt-btn:active { transform: scale(0.97); }
+    .opt-btn:hover  {
+      background: rgba(0,255,157,0.12);
+      border-color: #00ff9d;
+      box-shadow: 0 0 14px #00ff9d55;
     }
-    .card-num {
-      font-family:'Orbitron', monospace;
-      font-size:11px; color:rgba(0,255,136,.5);
-      letter-spacing:1px;
+    .opt-btn.correct {
+      background: rgba(0,255,100,0.25);
+      border-color: #00ff64;
+      box-shadow: 0 0 20px #00ff6488;
+      color: #fff;
+    }
+    .opt-btn.wrong {
+      background: rgba(255,30,30,0.22);
+      border-color: #ff2222;
+      box-shadow: 0 0 16px #ff222266;
+      color: #ff8888;
+    }
+    .opt-btn:disabled { cursor: default; }
+
+    /* ─── Pop-up de Solución ─── */
+    #solution-popup {
+      display: none;
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(0.88);
+      width: min(92vw, 380px);
+      background: rgba(4,12,20,0.97);
+      border: 1.5px solid #00d4ff66;
+      border-radius: 12px;
+      padding: 22px 20px 18px;
+      z-index: 20;
+      pointer-events: all;
+      box-shadow: 0 0 40px #00d4ff33, 0 0 4px #00d4ff22;
+      animation: popIn 0.22s cubic-bezier(.34,1.56,.64,1) forwards;
+    }
+    @keyframes popIn {
+      from { opacity:0; transform: translate(-50%,-50%) scale(0.82); }
+      to   { opacity:1; transform: translate(-50%,-50%) scale(1); }
+    }
+    #solution-popup.visible { display: block; }
+
+    .popup-badge {
+      display: inline-block;
+      font-family: 'Orbitron', monospace;
+      font-size: 10px;
+      letter-spacing: 3px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+    }
+    .popup-badge.correct { background:#00ff6420; color:#00ff64; border:1px solid #00ff6455; }
+    .popup-badge.wrong   { background:#ff222220; color:#ff4444; border:1px solid #ff222255; }
+
+    .popup-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 13px;
+      color: #00d4ff;
+      letter-spacing: 2px;
+      margin-bottom: 14px;
+      text-shadow: 0 0 8px #00d4ff88;
     }
 
-    #equation {
-      font-family:'Orbitron', monospace;
-      font-size:clamp(26px,7vw,36px);
-      color:var(--g);
-      text-align:center;
-      letter-spacing:2px;
-      margin:4px 0 14px;
-      text-shadow:0 0 20px rgba(0,255,136,.4);
+    .popup-equation {
+      font-family: 'Orbitron', monospace;
+      font-size: 16px;
+      color: #00ff9d;
+      text-align: center;
+      margin-bottom: 14px;
+      text-shadow: 0 0 10px #00ff9d88;
+      letter-spacing: 2px;
     }
 
-    .card-sub {
-      font-size:10px; letter-spacing:4px;
-      color:rgba(0,255,136,.45);
-      text-align:center;
-      border-top:1px solid rgba(0,255,136,.1);
-      padding-top:12px;
-      margin-top:2px;
+    .step-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-bottom: 18px;
+    }
+    .step-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 13px;
+      color: #c8ffe8;
+      line-height: 1.5;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #00d4ff22;
+      border: 1px solid #00d4ff55;
+      color: #00d4ff;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', monospace;
+    }
+    .step-text em {
+      font-style: normal;
+      color: #00ff9d;
+      font-weight: bold;
     }
 
-    /* Feedback inline dentro de la card */
-    #feedback {
-      text-align:center; font-size:13px;
-      min-height:18px; margin-top:10px;
-      letter-spacing:2px;
+    #next-btn {
+      width: 100%;
+      padding: 13px;
+      background: linear-gradient(135deg, #00d4ff22, #00ff9d22);
+      border: 1.5px solid #00d4ff;
+      border-radius: 7px;
+      color: #00d4ff;
+      font-family: 'Orbitron', monospace;
+      font-size: 13px;
+      letter-spacing: 3px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: background 0.15s, box-shadow 0.15s;
     }
-    #feedback.ok  { color:#00ffcc; text-shadow:0 0 8px #00ffcc; }
-    #feedback.err { color:#ff3355; text-shadow:0 0 8px #ff3355; }
-
-    /* ════════════════════════════════════════════════════
-       BOTONES A / B / C
-    ════════════════════════════════════════════════════ */
-    #answers {
-      display:none;
-      position:fixed;
-      left:16px; right:16px; bottom:24px;
-      display:none;
-      flex-direction:column;
-      gap:10px;
-      z-index:100;
+    #next-btn:hover {
+      background: linear-gradient(135deg, #00d4ff44, #00ff9d33);
+      box-shadow: 0 0 18px #00d4ff66;
     }
 
-    .ans-btn {
-      display:flex; align-items:center;
-      gap:16px;
-      background:rgba(6,28,16,0.88);
-      border:1px solid rgba(0,255,136,.30);
-      border-radius:12px;
-      padding:16px 20px;
-      cursor:pointer;
-      touch-action:manipulation;
-      -webkit-tap-highlight-color:transparent;
-      transition:border-color .15s, background .15s, box-shadow .15s, transform .1s;
-      /* Glow suave */
-      box-shadow:0 2px 16px rgba(0,0,0,.4), inset 0 0 30px rgba(0,255,136,.02);
+    /* ─── Marker hint ─── */
+    #marker-hint {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #00ff9d55;
+      font-size: 12px;
+      letter-spacing: 2px;
+      pointer-events: none;
+      z-index: 5;
+      text-transform: uppercase;
     }
-    .ans-btn:active { transform:scale(.97); }
-    .ans-btn:focus  { outline:none; }
-
-    .btn-letter {
-      font-family:'Orbitron', monospace;
-      font-size:11px; color:var(--gdim);
-      width:18px; flex-shrink:0;
-      letter-spacing:1px;
+    #marker-hint .crosshair {
+      width: 60px; height: 60px;
+      border: 2px solid #00ff9d33;
+      border-radius: 50%;
+      margin: 0 auto 10px;
+      display: flex; align-items: center; justify-content: center;
+      animation: pulse 2s infinite;
     }
-
-    .btn-value {
-      font-family:'Orbitron', monospace;
-      font-size:22px; color:var(--g);
-      letter-spacing:1px;
-    }
-
-    /* Estados de respuesta */
-    .ans-btn.ok {
-      border-color:#00ffcc;
-      background:rgba(0,255,200,.12);
-      box-shadow:0 0 20px rgba(0,255,200,.3);
-    }
-    .ans-btn.ok .btn-letter,
-    .ans-btn.ok .btn-value { color:#00ffcc; }
-
-    .ans-btn.err {
-      border-color:#ff3355;
-      background:rgba(255,50,80,.10);
-      box-shadow:0 0 14px rgba(255,50,80,.3);
-    }
-    .ans-btn.err .btn-letter,
-    .ans-btn.err .btn-value { color:#ff3355; }
-
-    /* ════════════════════════════════════════════════════
-       HINT — "apunta a la imagen"
-    ════════════════════════════════════════════════════ */
-    #hint {
-      display:none;
-      position:fixed; bottom:0; left:0; right:0;
-      padding:16px;
-      background:rgba(0,10,4,0.80);
-      border-top:1px solid rgba(0,255,136,.2);
-      color:var(--gdim); font-size:12px;
-      letter-spacing:2px; text-align:center;
-      z-index:100;
-      animation:blink 2s infinite;
-    }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
-
-    /* ════════════════════════════════════════════════════
-       PANTALLA FINAL
-    ════════════════════════════════════════════════════ */
-    #endscreen {
-      display:none; position:fixed; inset:0;
-      background:rgba(0,8,3,0.97);
-      flex-direction:column; justify-content:center;
-      align-items:center; gap:18px;
-      text-align:center; z-index:300; padding:32px;
-    }
-    #endscreen.show { display:flex; }
-    #endscreen h2 {
-      font-family:'Orbitron', monospace;
-      font-size:clamp(22px,6vw,36px);
-      letter-spacing:4px;
-      text-shadow:0 0 20px var(--g);
-    }
-    #endscreen p { font-size:14px; color:var(--gdim); letter-spacing:2px; }
-    #endscreen button {
-      margin-top:10px; background:transparent;
-      border:1px solid var(--g); color:var(--g);
-      font-family:inherit; font-size:13px;
-      letter-spacing:3px; padding:13px 30px;
-      cursor:pointer; border-radius:8px;
-      touch-action:manipulation;
-      box-shadow:0 0 14px rgba(0,255,136,.2);
+    @keyframes pulse {
+      0%,100% { opacity:.4; transform: scale(1); }
+      50%      { opacity:1;  transform: scale(1.1); }
     }
   </style>
 </head>
 <body>
 
-  <!-- ══════ SPLASH ══════ -->
-  <div id="splash">
-    <div id="splash-icon">⬡</div>
-    <div id="splash-label">AR ÁLGEBRA · BOOT</div>
-    <div id="splash-status">Iniciando sistema...</div>
-    <button id="cam-btn" onclick="manualStart()">▶ INICIAR CÁMARA</button>
-    <div id="err-box"></div>
-    <button id="retry-btn" onclick="location.reload()">[ REINTENTAR ]</button>
+<!-- ─── Escena A-Frame con alpha:true y sin logarithmicDepthBuffer ─── -->
+<a-scene
+  embedded
+  arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+  renderer="alpha: true; antialias: true; precision: medium;"
+  vr-mode-ui="enabled: false"
+  loading-screen="enabled: false"
+>
+  <!-- Marcador Hiro -->
+  <a-marker preset="hiro" id="hiro-marker">
+    <!-- Ecuación 3D: se actualiza por JS -->
+    <a-text
+      id="eq-text"
+      value="5x + 6 = 10"
+      align="center"
+      color="#00ff9d"
+      width="4"
+      position="0 0.5 0"
+      rotation="-90 0 0"
+      font="https://cdn.aframe.io/fonts/Exo2Bold.fnt"
+      shader="msdf"
+    ></a-text>
+    <!-- Plataforma neón bajo la ecuación -->
+    <a-box
+      position="0 0 0"
+      width="4" height="0.05" depth="1.2"
+      color="#001a0d"
+      opacity="0.85"
+    ></a-box>
+    <a-box
+      position="0 0 0"
+      width="4.1" height="0.03" depth="1.3"
+      color="#00ff9d"
+      opacity="0.18"
+    ></a-box>
+    <!-- Luz puntual verde neón -->
+    <a-light type="point" color="#00ff9d" intensity="1.2" distance="3" position="0 1 0"></a-light>
+  </a-marker>
+
+  <a-entity camera></a-entity>
+</a-scene>
+
+<!-- ─── HUD ─── -->
+<div id="score-bar">
+  <div>
+    <div class="label">Score</div>
+    <div id="score-display">000</div>
   </div>
+  <div id="question-counter">Q 1 / ∞</div>
+</div>
 
-  <!-- ══════ HUD ══════ -->
-  <div id="hud">
-    <div class="hud-row">
-      <!-- Puntos -->
-      <div class="hud-col">
-        <div class="hud-label">PUNTOS</div>
-        <div id="pts-display">
-          <div class="digit" id="d2">0</div>
-          <div class="digit" id="d1">0</div>
-          <div class="digit" id="d0">0</div>
-        </div>
-      </div>
+<div id="flash"></div>
+<div id="neon-border"></div>
 
-      <!-- Dots de progreso -->
-      <div id="dots"></div>
-
-      <!-- Racha -->
-      <div class="hud-col right">
-        <div class="hud-label">RACHA</div>
-        <div id="streak-display"><span>x</span><span id="streak-val">0</span></div>
-      </div>
-    </div>
+<div id="marker-hint">
+  <div class="crosshair">
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      <path d="M11 2v4M11 16v4M2 11h4M16 11h4" stroke="#00ff9d" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
   </div>
+  Apunta al marcador Hiro
+</div>
 
-  <!-- ══════ CARD EJERCICIO ══════ -->
-  <div id="card">
-    <div class="card-meta">
-      <span class="card-tag">◆ EJERCICIO ACTUAL</span>
-      <span class="card-num" id="card-num">01/10</span>
-    </div>
-    <div id="equation">4x + 5 = 13</div>
-    <div class="card-sub">ENCUENTRA EL VALOR DE X</div>
-    <div id="feedback"></div>
+<div id="hud">
+  <div id="options-panel">
+    <div class="hint-label">Selecciona la respuesta</div>
+    <button class="opt-btn" id="btn0" onclick="checkAnswer(0)">—</button>
+    <button class="opt-btn" id="btn1" onclick="checkAnswer(1)">—</button>
+    <button class="opt-btn" id="btn2" onclick="checkAnswer(2)">—</button>
   </div>
+</div>
 
-  <!-- ══════ BOTONES A/B/C ══════ -->
-  <div id="answers"></div>
+<!-- ─── Pop-up solución ─── -->
+<div id="solution-popup">
+  <span id="popup-badge" class="popup-badge correct">✓ Correcto</span>
+  <div class="popup-title">PROCEDIMIENTO PASO A PASO</div>
+  <div class="popup-equation" id="popup-eq">5x + 6 = 10</div>
+  <ul class="step-list" id="step-list"></ul>
+  <button id="next-btn" onclick="nextQuestion()">▶ &nbsp;Siguiente Ejercicio</button>
+</div>
 
-  <!-- ══════ HINT ══════ -->
-  <div id="hint">[ APUNTA A LA IMAGEN OBJETIVO ]</div>
+<script>
+/* ════════════════════════════════════════════════
+   GENERADOR DE EJERCICIOS
+   Tipos: ax + b = c  →  x = (c-b)/a
+          ax - b = c  →  x = (c+b)/a
+          ax = c      →  x = c/a
+          x/a + b = c →  x = a*(c-b)
+   Opciones con distractor aleatorio
+   ════════════════════════════════════════════════ */
 
-  <!-- ══════ FIN ══════ -->
-  <div id="endscreen">
-    <h2>MISIÓN COMPLETA</h2>
-    <p id="final-score">ACIERTOS: 0 / 10</p>
-    <p id="final-streak" style="color:var(--gold)">RACHA MÁX: 0</p>
-    <button onclick="restart()">[ JUGAR DE NUEVO ]</button>
-  </div>
+let score     = 0;
+let qNumber   = 1;
+let current   = null;  // { eqText, answer (fraction|int), options[], correctIdx, steps[] }
 
-  <!-- ══════ A-FRAME + MINDAR ══════
-    colorManagement:true  → corrección de color para transparencia correcta
-    alpha:true            → canvas WebGL con canal alpha (fondo transparente)
-    logarithmicDepthBuffer:false → evita pantalla negra en GPU Adreno/Mali
-    autoStart:false       → arrancamos manualmente tras confirmar permiso
-  ══════════════════════════════════ -->
-  <a-scene
-    id="ar-scene"
-    mindar-image="imageTargetSrc:https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/examples/assets/card-example/targets.mind;
-                  autoStart:false;
-                  uiLoading:false;
-                  uiError:false;
-                  uiScanning:false;"
-    embedded
-    renderer="antialias:true; alpha:true; colorManagement:true; precision:medium; logarithmicDepthBuffer:false;"
-    vr-mode-ui="enabled:false"
-    device-orientation-permission-ui="enabled:false"
-  >
-    <a-assets></a-assets>
-    <a-camera position="0 0 0" look-controls="enabled:false"></a-camera>
+// ── Fracción reducida ──
+function gcd(a, b) { return b === 0 ? Math.abs(a) : gcd(b, a % b); }
+function fraction(num, den) {
+  if (den < 0) { num = -num; den = -den; }
+  const g = gcd(Math.abs(num), den);
+  return { num: num/g, den: den/g };
+}
+function fmtFrac({ num, den }) {
+  if (den === 1) return String(num);
+  return `${num}/${den}`;
+}
+function fmtFracLatex({ num, den }) {
+  if (den === 1) return String(num);
+  return `${num}/${den}`;
+}
 
-    <a-entity mindar-image-target="targetIndex:0">
-      <!-- Panel 3D flotante sobre la imagen objetivo -->
-      <a-plane position="0 0 0.001" width="1" height="0.4"
-               color="#061210" opacity="0.88" material="shader:flat;"></a-plane>
-      <a-text id="ar-eq"    value="AR ALGEBRA" align="center"
-              color="#00ff88" width="0.9" position="0 0.08 0.002" wrap-count="22"></a-text>
-      <a-text id="ar-state" value="Responde abajo" align="center"
-              color="#00aa44" width="0.8" position="0 -0.1 0.002" wrap-count="26"></a-text>
-    </a-entity>
-  </a-scene>
+// ── Genera un ejercicio aleatorio ──
+function genExercise() {
+  const type = Math.floor(Math.random() * 4);
+  let eqText, answer, steps, correctLabel;
 
-  <script>
-  /* ═══════════════════════════════════════════════════════════
-     DATOS — 10 ejercicios con 3 opciones cada uno
-  ═══════════════════════════════════════════════════════════ */
-  var EX = [
-    { eq:'4x + 5 = 13',  sub:'ENCUENTRA EL VALOR DE X', opts:['-1','2','5'],       ans:'2'  },
-    { eq:'3x = 21',      sub:'ENCUENTRA EL VALOR DE X', opts:['6','7','9'],        ans:'7'  },
-    { eq:'2x + 4 = 14',  sub:'ENCUENTRA EL VALOR DE X', opts:['3','5','6'],        ans:'5'  },
-    { eq:'x² = 49',      sub:'VALOR POSITIVO DE X',     opts:['6','7','8'],        ans:'7'  },
-    { eq:'x / 4 = 3',    sub:'ENCUENTRA EL VALOR DE X', opts:['9','12','16'],      ans:'12' },
-    { eq:'x² − 9 = 0',   sub:'FACTORIZA',               opts:['(x+3)²','(x-3)(x+3)','(x-3)²'], ans:'(x-3)(x+3)' },
-    { eq:'5x − 3 = 22',  sub:'ENCUENTRA EL VALOR DE X', opts:['4','5','6'],        ans:'5'  },
-    { eq:'y = 3x + 7',   sub:'¿CUÁL ES LA PENDIENTE?',  opts:['3','7','1'],        ans:'3'  },
-    { eq:'4(x−2) = 16',  sub:'ENCUENTRA EL VALOR DE X', opts:['4','5','6'],        ans:'6'  },
-    { eq:'2x / 3 = 8',   sub:'ENCUENTRA EL VALOR DE X', opts:['10','12','14'],     ans:'12' }
-  ];
-
-  var LETTERS = ['A','B','C'];
-
-  /* ═══════════════════════════════════════════════════════════
-     ESTADO
-  ═══════════════════════════════════════════════════════════ */
-  var idx      = 0;
-  var score    = 0;
-  var streak   = 0;
-  var maxStreak= 0;
-  var answered = false;
-
-  /* ═══════════════════════════════════════════════════════════
-     REFS DOM
-  ═══════════════════════════════════════════════════════════ */
-  var $splash  = document.getElementById('splash');
-  var $status  = document.getElementById('splash-status');
-  var $camBtn  = document.getElementById('cam-btn');
-  var $errBox  = document.getElementById('err-box');
-  var $retryBtn= document.getElementById('retry-btn');
-  var $icon    = document.getElementById('splash-icon');
-  var $hud     = document.getElementById('hud');
-  var $card    = document.getElementById('card');
-  var $answers = document.getElementById('answers');
-  var $hint    = document.getElementById('hint');
-  var $end     = document.getElementById('endscreen');
-
-  /* ═══════════════════════════════════════════════════════════
-     DOTS DE PROGRESO
-  ═══════════════════════════════════════════════════════════ */
-  function buildDots() {
-    var c = document.getElementById('dots');
-    c.innerHTML = '';
-    for (var i = 0; i < EX.length; i++) {
-      var d = document.createElement('div');
-      d.className = 'dot' + (i === 0 ? ' active' : '');
-      d.id = 'dot-'+i;
-      c.appendChild(d);
-    }
+  if (type === 0) {
+    // ax + b = c
+    const a = randInt(2,9);
+    const b = randInt(1,8);
+    const c = randInt(b+1, b+a*6);
+    eqText = `${a}x + ${b} = ${c}`;
+    const f = fraction(c - b, a);
+    answer = f;
+    correctLabel = fmtFrac(f);
+    steps = [
+      `Ecuación: <em>${eqText}</em>`,
+      `Restamos ${b} en ambos lados: <em>${a}x = ${c - b}</em>`,
+      `Dividimos entre ${a}: <em>x = ${c-b}/${a}</em>`,
+      `Resultado: <em>x = ${correctLabel}</em>`
+    ];
+  } else if (type === 1) {
+    // ax - b = c
+    const a = randInt(2,9);
+    const b = randInt(1,8);
+    const c = randInt(1, a*6);
+    eqText = `${a}x - ${b} = ${c}`;
+    const f = fraction(c + b, a);
+    answer = f;
+    correctLabel = fmtFrac(f);
+    steps = [
+      `Ecuación: <em>${eqText}</em>`,
+      `Sumamos ${b} en ambos lados: <em>${a}x = ${c + b}</em>`,
+      `Dividimos entre ${a}: <em>x = ${c+b}/${a}</em>`,
+      `Resultado: <em>x = ${correctLabel}</em>`
+    ];
+  } else if (type === 2) {
+    // ax = c
+    const a = randInt(2,9);
+    const c = randInt(1, a*7);
+    eqText = `${a}x = ${c}`;
+    const f = fraction(c, a);
+    answer = f;
+    correctLabel = fmtFrac(f);
+    steps = [
+      `Ecuación: <em>${eqText}</em>`,
+      `Dividimos ambos lados entre ${a}`,
+      `<em>x = ${c}/${a}</em>`,
+      `Resultado: <em>x = ${correctLabel}</em>`
+    ];
+  } else {
+    // x/a + b = c
+    const a = randInt(2,6);
+    const b = randInt(1,6);
+    const c = randInt(b+1, b+8);
+    eqText = `x/${a} + ${b} = ${c}`;
+    const xVal = a * (c - b);
+    answer = fraction(xVal, 1);
+    correctLabel = String(xVal);
+    steps = [
+      `Ecuación: <em>${eqText}</em>`,
+      `Restamos ${b}: <em>x/${a} = ${c - b}</em>`,
+      `Multiplicamos por ${a}: <em>x = ${a} × ${c-b}</em>`,
+      `Resultado: <em>x = ${correctLabel}</em>`
+    ];
   }
 
-  function updateDots(i) {
-    for (var j = 0; j < EX.length; j++) {
-      var d = document.getElementById('dot-'+j);
-      if (!d) continue;
-      d.className = 'dot' + (j < i ? ' done' : j === i ? ' active' : '');
-    }
+  // Genera 3 opciones únicas (1 correcta + 2 distractores)
+  const options = [correctLabel];
+  while (options.length < 3) {
+    const d = makeDistractor(answer);
+    if (!options.includes(d)) options.push(d);
   }
+  // Mezcla
+  shuffle(options);
+  const correctIdx = options.indexOf(correctLabel);
 
-  /* ═══════════════════════════════════════════════════════════
-     PUNTOS — display de 3 dígitos con brillo
-  ═══════════════════════════════════════════════════════════ */
-  function updateScore(s) {
-    var str = String(s).padStart(3,'0');
-    ['d2','d1','d0'].forEach(function(id, i) {
-      var el = document.getElementById(id);
-      el.textContent = str[i];
-      el.classList.toggle('lit', str[i] !== '0');
-    });
+  return { eqText, answer, correctLabel, options, correctIdx, steps };
+}
+
+function makeDistractor(f) {
+  const delta = randInt(1, 4) * (Math.random() < 0.5 ? 1 : -1);
+  const d = fraction(f.num + delta * f.den, f.den);
+  return fmtFrac(d);
+}
+
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
+}
 
-  function updateStreak(s) {
-    document.getElementById('streak-val').textContent = s;
+/* ════════════════════════════════════════════════
+   UI
+   ════════════════════════════════════════════════ */
+function loadQuestion() {
+  current = genExercise();
+
+  // 3D text
+  document.querySelector('#eq-text').setAttribute('value', current.eqText);
+
+  // Botones
+  const btns = document.querySelectorAll('.opt-btn');
+  btns.forEach((btn, i) => {
+    btn.textContent = `x = ${current.options[i]}`;
+    btn.className = 'opt-btn';
+    btn.disabled = false;
+  });
+
+  // Counter
+  document.getElementById('question-counter').textContent = `Q ${qNumber} / ∞`;
+
+  // Ocultar popup
+  document.getElementById('solution-popup').classList.remove('visible');
+}
+
+function checkAnswer(idx) {
+  if (!current) return;
+
+  const btns = document.querySelectorAll('.opt-btn');
+  btns.forEach(b => b.disabled = true);
+
+  const isCorrect = (idx === current.correctIdx);
+
+  // Feedback visual
+  triggerFlash(isCorrect ? 'green' : 'red');
+
+  // Highlight botones
+  btns[current.correctIdx].classList.add('correct');
+  if (!isCorrect) btns[idx].classList.add('wrong');
+
+  // Score
+  if (isCorrect) {
+    score = Math.max(0, score + 10);
+  } else {
+    score = Math.max(0, score - 5);
   }
+  updateScore();
 
-  /* ═══════════════════════════════════════════════════════════
-     CARGAR EJERCICIO
-  ═══════════════════════════════════════════════════════════ */
-  function load(i) {
-    answered = false;
-    var ex = EX[i];
+  // Popup
+  showSolution(isCorrect);
+}
 
-    document.getElementById('card-num').textContent  = String(i+1).padStart(2,'0') + '/10';
-    document.getElementById('equation').textContent  = ex.eq;
-    document.querySelector('.card-sub').textContent  = ex.sub;
-    document.getElementById('feedback').textContent  = '';
-    document.getElementById('feedback').className    = '';
+function triggerFlash(color) {
+  const flash  = document.getElementById('flash');
+  const border = document.getElementById('neon-border');
+  flash.className  = color;
+  border.className = color;
+  setTimeout(() => {
+    flash.classList.add('fade');
+    border.className = '';
+  }, 600);
+  setTimeout(() => { flash.className = ''; }, 750);
+}
 
-    // Actualizar texto en AR
-    var arEq = document.getElementById('ar-eq');
-    var arSt = document.getElementById('ar-state');
-    if (arEq) arEq.setAttribute('value', ex.eq);
-    if (arSt) arSt.setAttribute('value', 'Responde abajo');
+function updateScore() {
+  document.getElementById('score-display').textContent =
+    String(score).padStart(3, '0');
+}
 
-    // Botones A / B / C
-    $answers.innerHTML = '';
-    ex.opts.forEach(function(opt, j) {
-      var btn = document.createElement('button');
-      btn.className = 'ans-btn';
-      btn.innerHTML =
-        '<span class="btn-letter">' + LETTERS[j] + '</span>' +
-        '<span class="btn-value">'  + opt + '</span>';
-      btn.addEventListener('click', function() { pick(btn, opt); });
-      $answers.appendChild(btn);
-    });
+function showSolution(isCorrect) {
+  const popup  = document.getElementById('solution-popup');
+  const badge  = document.getElementById('popup-badge');
+  const eqEl   = document.getElementById('popup-eq');
+  const list   = document.getElementById('step-list');
 
-    updateDots(i);
-  }
+  badge.className = `popup-badge ${isCorrect ? 'correct' : 'wrong'}`;
+  badge.textContent = isCorrect ? '✓  Correcto  +10' : '✗  Incorrecto  −5';
 
-  /* ═══════════════════════════════════════════════════════════
-     PROCESAR RESPUESTA
-  ═══════════════════════════════════════════════════════════ */
-  function pick(btn, selected) {
-    if (answered) return;
-    answered = true;
+  eqEl.textContent = current.eqText;
 
-    var ex      = EX[idx];
-    var allBtns = $answers.querySelectorAll('.ans-btn');
-    allBtns.forEach(function(b) { b.disabled = true; });
+  list.innerHTML = '';
+  current.steps.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="step-num">${i+1}</span><span class="step-text">${s}</span>`;
+    list.appendChild(li);
+  });
 
-    var arSt = document.getElementById('ar-state');
-    var fb   = document.getElementById('feedback');
+  popup.classList.add('visible');
+}
 
-    if (selected === ex.ans) {
-      score++;
-      streak++;
-      if (streak > maxStreak) maxStreak = streak;
-      btn.classList.add('ok');
-      fb.textContent = '✦ CORRECTO';
-      fb.className   = 'ok';
-      if (arSt) arSt.setAttribute('value','✦ CORRECTO!');
-      setTimeout(next, 1300);
-    } else {
-      streak = 0;
-      btn.classList.add('err');
-      fb.textContent = '✗ ERA: ' + ex.ans;
-      fb.className   = 'err';
-      if (arSt) arSt.setAttribute('value','Era: '+ex.ans);
-      allBtns.forEach(function(b) {
-        var val = b.querySelector('.btn-value');
-        if (val && val.textContent.trim() === ex.ans) b.classList.add('ok');
-      });
-      setTimeout(next, 1900);
-    }
+function nextQuestion() {
+  qNumber++;
+  loadQuestion();
+}
 
-    updateScore(score);
-    updateStreak(streak);
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     AVANZAR
-  ═══════════════════════════════════════════════════════════ */
-  function next() {
-    idx++;
-    if (idx >= EX.length) {
-      $card.style.display    = 'none';
-      $answers.style.display = 'none';
-      $hint.style.display    = 'none';
-      document.getElementById('final-score').textContent  = 'ACIERTOS: '+score+' / 10';
-      document.getElementById('final-streak').textContent = 'RACHA MÁX: '+maxStreak;
-      $end.classList.add('show');
-    } else {
-      load(idx);
-    }
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     REINICIAR
-  ═══════════════════════════════════════════════════════════ */
-  function restart() {
-    idx = 0; score = 0; streak = 0; maxStreak = 0;
-    updateScore(0);
-    updateStreak(0);
-    $end.classList.remove('show');
-    load(0);
-    // Si el marcador está activo, mostramos la card
-    $card.style.display    = 'none';
-    $answers.style.display = 'none';
-    $hint.style.display    = '';
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     FORZAR VIDEO — HyperOS puede bloquear el autoplay
-  ═══════════════════════════════════════════════════════════ */
-  var _videoAttempts = 0;
-  var _videoOK = false;
-
-  function forceVideo() {
-    var vid = document.querySelector('video');
-    if (!vid) {
-      if (_videoAttempts++ < 30) setTimeout(forceVideo, 200);
-      return;
-    }
-
-    // Propiedades requeridas para autoplay en Android/HyperOS
-    vid.muted        = true;
-    vid.playsInline  = true;
-    vid.setAttribute('playsinline','');
-    vid.setAttribute('webkit-playsinline','');
-
-    // Estilos críticos: z-index -1 y visible
-    vid.style.cssText = [
-      'position:fixed',
-      'top:0','left:0',
-      'width:100%','height:100%',
-      'object-fit:cover',
-      'z-index:-1',
-      'display:block',
-      'background:transparent'
-    ].join('!important;') + '!important';
-
-    var p = vid.play();
-    if (p && p.then) {
-      p.then(function() {
-        _videoOK = true;
-        document.getElementById('cam-btn').style.display = 'none';
-      }).catch(function() {
-        // Autoplay bloqueado: mostrar botón manual
-        if (!_videoOK) showManualBtn();
-        if (_videoAttempts++ < 6) setTimeout(forceVideo, 400);
-      });
-    }
-  }
-
-  function showManualBtn() {
-    $status.textContent = 'El navegador bloqueó el autoplay.';
-    $camBtn.style.display = '';
-  }
-
-  // El usuario toca "Iniciar Cámara" → desbloquea autoplay por gesto
-  function manualStart() {
-    var vid = document.querySelector('video');
-    if (vid) {
-      vid.muted = true;
-      vid.play().then(function() {
-        _videoOK = true;
-        $camBtn.style.display = 'none';
-        $status.textContent   = '✓ Cámara iniciada.';
-      }).catch(function(e) {
-        showError({ name:e.name, message:e.message });
-      });
-    }
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     MOSTRAR ERROR CON DIAGNÓSTICO EXACTO
-  ═══════════════════════════════════════════════════════════ */
-  function showError(err) {
-    $icon.style.animation = 'none';
-    $icon.textContent     = '✗';
-    $icon.style.color     = '#ff3355';
-
-    var msgs = {
-      NotAllowedError:      'Permiso denegado. Ve a Ajustes del navegador → Permisos → Cámara y habilita este sitio.',
-      PermissionDeniedError:'Permiso denegado. Habilita la cámara en Ajustes del navegador.',
-      NotFoundError:        'No se encontró cámara trasera.',
-      DevicesNotFoundError: 'No se encontró cámara trasera.',
-      NotReadableError:     'La cámara está siendo usada por otra app. Ciérrala y recarga.',
-      TrackStartError:      'La cámara está siendo usada por otra app. Ciérrala y recarga.',
-      OverconstrainedError: 'Configuración de cámara incompatible con este dispositivo.',
-      SecurityError:        'Error de seguridad: abre el sitio por HTTPS.',
-      AbortError:           'Acceso a cámara interrumpido. Recarga.',
-      APINotSupported:      'Tu navegador no soporta WebRTC. Usa Chrome/Firefox por HTTPS.'
-    };
-
-    $status.textContent = msgs[err.name] || 'Error desconocido accediendo a la cámara.';
-
-    $errBox.style.display = 'block';
-    $errBox.innerHTML =
-      '<strong>[ DIAGNÓSTICO ]</strong><br>' +
-      'name: '       + (err.name       || 'N/A') + '<br>' +
-      'message: '    + (err.message    || 'N/A') + '<br>' +
-      'constraint: ' + (err.constraint || 'N/A') + '<br>' +
-      'stack: '      + (err.stack ? err.stack.split('\n')[0] : 'N/A');
-
-    $retryBtn.style.display = 'block';
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     BOOT — pedir permiso → arrancar MindAR
-  ═══════════════════════════════════════════════════════════ */
-  async function boot() {
-    $status.textContent = 'Verificando API de cámara...';
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      showError({ name:'APINotSupported', message:'mediaDevices no disponible' });
-      return;
-    }
-
-    // Pedir permiso con constraints mínimas (sin resolución forzada)
-    var stream;
-    try {
-      $status.textContent = 'Solicitando cámara trasera...';
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: 'environment' }
-      });
-    } catch(e) {
-      showError(e);
-      return;
-    }
-
-    // Permiso concedido — liberar track (MindAR abre el suyo)
-    stream.getTracks().forEach(function(t){ t.stop(); });
-    $status.textContent = '✓ Permiso concedido. Cargando motor...';
-
-    var scene = document.getElementById('ar-scene');
-
-    function startMindAR() {
-      var sys = scene.systems['mindar-image-system'];
-      if (!sys) { setTimeout(startMindAR, 300); return; }
-
-      $status.textContent = '✓ Motor listo. Iniciando tracking...';
-
-      sys.start().then(function() {
-        // Motor arrancado — lanzar forzado de video
-        forceVideo();
-
-        // Pequeña espera para dejar que el video se estabilice
-        setTimeout(function() {
-          $splash.style.display = 'none';
-          $hud.style.display    = '';
-          $hint.style.display   = '';
-          buildDots();
-          load(0);
-          bindTarget();
-        }, 600);
-
-      }).catch(function(e) {
-        showError(e instanceof Error ? e : { name:'MindARError', message:String(e) });
-      });
-    }
-
-    if (scene.hasLoaded) { startMindAR(); }
-    else { scene.addEventListener('loaded', startMindAR); }
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     EVENTOS DE IMAGEN DETECTADA / PERDIDA
-  ═══════════════════════════════════════════════════════════ */
-  function bindTarget() {
-    var t = document.querySelector('[mindar-image-target]');
-    if (!t) { setTimeout(bindTarget, 400); return; }
-
-    t.addEventListener('targetFound', function() {
-      $hint.style.display    = 'none';
-      if (idx < EX.length) {
-        $card.style.display    = '';
-        $answers.style.display = 'flex';
-      }
-    });
-
-    t.addEventListener('targetLost', function() {
-      $card.style.display    = 'none';
-      $answers.style.display = 'none';
-      if (idx < EX.length) $hint.style.display = '';
-    });
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     ARRANCAR
-  ═══════════════════════════════════════════════════════════ */
-  buildDots();
-  boot();
-  </script>
+/* ════════════════════════════════════════════════
+   INICIO
+   ════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  updateScore();
+  loadQuestion();
+});
+</script>
 </body>
 </html>
