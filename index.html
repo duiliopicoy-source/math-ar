@@ -5,383 +5,246 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Álgebra en RA</title>
 
-  <!-- A-Frame sin logarithmicDepthBuffer para evitar pantalla negra en HyperOS -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <!-- AR.js -->
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
 
   <style>
-    /* ─── Reset ─── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'Share Tech Mono', monospace;
-      background: #000;
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
       overflow: hidden;
-      height: 100dvh;
-      width: 100vw;
+      background: #000;
+      font-family: 'Share Tech Mono', monospace;
     }
 
-    /* ─── Cámara AR: z-index negativo para que la UI quede encima ─── */
-    canvas, video {
+    /* A-SCENE ocupa todo el viewport */
+    a-scene {
       position: fixed !important;
-      top: 0; left: 0;
-      width: 100% !important;
-      height: 100% !important;
+      top: 0 !important; left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 0 !important;
+    }
+
+    /* VIDEO y CANVAS: fondo completo, nunca recortado */
+    video, canvas {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      object-fit: cover !important;
       z-index: -1 !important;
     }
 
-    /* ─── HUD: contenedor principal de la UI ─── */
+    /* HUD encima de todo */
     #hud {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column;
       justify-content: flex-end;
       pointer-events: none;
-      z-index: 10;
     }
 
-    /* ─── Feedback flash de pantalla ─── */
-    #flash {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 9;
-      opacity: 0;
-      transition: opacity 0.1s ease;
-    }
-    #flash.green  { background: rgba(0,255,100,0.25); opacity: 1; }
-    #flash.red    { background: rgba(255,30,30,0.28);  opacity: 1; }
-    #flash.fade   { opacity: 0; }
-
-    /* ─── Borde neón de la pantalla ─── */
-    #neon-border {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 8;
-      border: 4px solid transparent;
-      border-radius: 0;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    #neon-border.green {
-      border-color: #00ff64;
-      box-shadow: inset 0 0 28px #00ff6455, 0 0 28px #00ff6455;
-    }
-    #neon-border.red {
-      border-color: #ff2222;
-      box-shadow: inset 0 0 28px #ff222255, 0 0 28px #ff222255;
-    }
-
-    /* ─── Score HUD ─── */
+    /* Score bar */
     #score-bar {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      padding: 10px 18px 8px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: linear-gradient(180deg,rgba(0,0,0,0.72) 0%,transparent 100%);
+      position: fixed; top: 0; left: 0; right: 0;
+      padding: 8px 16px 6px;
+      display: flex; justify-content: space-between; align-items: center;
+      background: linear-gradient(180deg,rgba(0,0,0,0.78) 0%,transparent 100%);
       z-index: 11;
     }
-    #score-bar .label {
-      font-family: 'Orbitron', monospace;
-      font-size: 11px;
-      letter-spacing: 2px;
-      color: #00ff9d55;
-      text-transform: uppercase;
+    #score-bar .lbl {
+      font-family:'Orbitron',monospace; font-size:10px;
+      letter-spacing:2px; color:#00ff9d66; text-transform:uppercase;
     }
     #score-display {
-      font-family: 'Orbitron', monospace;
-      font-size: 22px;
-      color: #00ff9d;
-      text-shadow: 0 0 12px #00ff9d, 0 0 28px #00ff9d88;
-      letter-spacing: 4px;
+      font-family:'Orbitron',monospace; font-size:20px;
+      letter-spacing:4px; color:#00ff9d;
+      text-shadow:0 0 10px #00ff9d, 0 0 24px #00ff9d88;
     }
-    #question-counter {
-      font-family: 'Orbitron', monospace;
-      font-size: 11px;
-      color: #00d4ff88;
-      letter-spacing: 2px;
+    #q-counter {
+      font-family:'Orbitron',monospace; font-size:10px;
+      letter-spacing:2px; color:#00d4ff88;
     }
 
-    /* ─── Panel de opciones ─── */
+    /* Flash */
+    #flash {
+      position:fixed; inset:0; pointer-events:none; z-index:9;
+      opacity:0; transition:opacity .1s;
+    }
+    #flash.green { background:rgba(0,255,100,.22); opacity:1; }
+    #flash.red   { background:rgba(255,30,30,.26);  opacity:1; }
+    #flash.fade  { opacity:0; }
+
+    /* Borde neon */
+    #neon-border {
+      position:fixed; inset:0; pointer-events:none; z-index:8;
+      border:4px solid transparent;
+      transition:border-color .15s, box-shadow .15s;
+    }
+    #neon-border.green {
+      border-color:#00ff64;
+      box-shadow:inset 0 0 24px #00ff6444, 0 0 24px #00ff6444;
+    }
+    #neon-border.red {
+      border-color:#ff2222;
+      box-shadow:inset 0 0 24px #ff222244, 0 0 24px #ff222244;
+    }
+
+    /* Panel de botones - mas delgados para mas espacio visual */
     #options-panel {
-      pointer-events: all;
-      padding: 0 14px 22px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
+      pointer-events:all;
+      padding:0 12px 16px;
+      display:flex; flex-direction:column; gap:7px;
     }
-
-    .hint-label {
-      text-align: center;
-      font-size: 10px;
-      letter-spacing: 3px;
-      color: #00d4ff66;
-      margin-bottom: 2px;
-      text-transform: uppercase;
+    .hint-lbl {
+      text-align:center; font-size:9px; letter-spacing:3px;
+      color:#00d4ff55; margin-bottom:2px; text-transform:uppercase;
     }
-
     .opt-btn {
-      width: 100%;
-      padding: 14px 10px;
-      border: 1.5px solid #00ff9d44;
-      border-radius: 6px;
-      background: rgba(0,0,0,0.72);
-      color: #00ff9d;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 17px;
-      letter-spacing: 2px;
-      cursor: pointer;
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
-      text-align: center;
+      width:100%; padding:11px 10px;
+      border:1.5px solid #00ff9d44; border-radius:6px;
+      background:rgba(0,0,0,0.74); color:#00ff9d;
+      font-family:'Share Tech Mono',monospace; font-size:16px;
+      letter-spacing:2px; cursor:pointer;
+      backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px);
+      transition:background .15s, border-color .15s, box-shadow .15s, transform .1s;
+      text-align:center;
     }
-    .opt-btn:active { transform: scale(0.97); }
-    .opt-btn:hover  {
-      background: rgba(0,255,157,0.12);
-      border-color: #00ff9d;
-      box-shadow: 0 0 14px #00ff9d55;
-    }
-    .opt-btn.correct {
-      background: rgba(0,255,100,0.25);
-      border-color: #00ff64;
-      box-shadow: 0 0 20px #00ff6488;
-      color: #fff;
-    }
-    .opt-btn.wrong {
-      background: rgba(255,30,30,0.22);
-      border-color: #ff2222;
-      box-shadow: 0 0 16px #ff222266;
-      color: #ff8888;
-    }
-    .opt-btn:disabled { cursor: default; }
+    .opt-btn:active  { transform:scale(.97); }
+    .opt-btn:hover   { background:rgba(0,255,157,.11); border-color:#00ff9d; box-shadow:0 0 12px #00ff9d44; }
+    .opt-btn.correct { background:rgba(0,255,100,.24); border-color:#00ff64; box-shadow:0 0 18px #00ff6488; color:#fff; }
+    .opt-btn.wrong   { background:rgba(255,30,30,.22); border-color:#ff2222; box-shadow:0 0 14px #ff222266; color:#ff8888; }
+    .opt-btn:disabled { cursor:default; }
 
-    /* ─── Pop-up de Solución ─── */
+    /* Hint marcador */
+    #marker-hint {
+      position:fixed; top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      text-align:center; color:#00ff9d55;
+      font-size:11px; letter-spacing:2px;
+      pointer-events:none; z-index:5; text-transform:uppercase;
+    }
+    #marker-hint .ring {
+      width:56px; height:56px;
+      border:2px solid #00ff9d33; border-radius:50%;
+      margin:0 auto 8px;
+      display:flex; align-items:center; justify-content:center;
+      animation:pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%,100%{opacity:.35;transform:scale(1);}
+      50%{opacity:1;transform:scale(1.1);}
+    }
+
+    /* Popup de solucion */
     #solution-popup {
-      display: none;
-      position: fixed;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%) scale(0.88);
-      width: min(92vw, 380px);
-      background: rgba(4,12,20,0.97);
-      border: 1.5px solid #00d4ff66;
-      border-radius: 12px;
-      padding: 22px 20px 18px;
-      z-index: 20;
-      pointer-events: all;
-      box-shadow: 0 0 40px #00d4ff33, 0 0 4px #00d4ff22;
-      animation: popIn 0.22s cubic-bezier(.34,1.56,.64,1) forwards;
+      display:none; position:fixed; left:50%; top:50%;
+      transform:translate(-50%,-50%) scale(.88);
+      width:min(92vw,370px);
+      background:rgba(4,12,20,.97);
+      border:1.5px solid #00d4ff66; border-radius:12px;
+      padding:20px 18px 16px; z-index:20; pointer-events:all;
+      box-shadow:0 0 36px #00d4ff33;
+      animation:popIn .22s cubic-bezier(.34,1.56,.64,1) forwards;
     }
     @keyframes popIn {
-      from { opacity:0; transform: translate(-50%,-50%) scale(0.82); }
-      to   { opacity:1; transform: translate(-50%,-50%) scale(1); }
+      from{opacity:0;transform:translate(-50%,-50%) scale(.82);}
+      to{opacity:1;transform:translate(-50%,-50%) scale(1);}
     }
-    #solution-popup.visible { display: block; }
+    #solution-popup.visible { display:block; }
 
     .popup-badge {
-      display: inline-block;
-      font-family: 'Orbitron', monospace;
-      font-size: 10px;
-      letter-spacing: 3px;
-      padding: 3px 10px;
-      border-radius: 20px;
-      margin-bottom: 12px;
-      text-transform: uppercase;
+      display:inline-block; font-family:'Orbitron',monospace;
+      font-size:10px; letter-spacing:3px; padding:3px 10px;
+      border-radius:20px; margin-bottom:10px; text-transform:uppercase;
     }
     .popup-badge.correct { background:#00ff6420; color:#00ff64; border:1px solid #00ff6455; }
     .popup-badge.wrong   { background:#ff222220; color:#ff4444; border:1px solid #ff222255; }
 
     .popup-title {
-      font-family: 'Orbitron', monospace;
-      font-size: 13px;
-      color: #00d4ff;
-      letter-spacing: 2px;
-      margin-bottom: 14px;
-      text-shadow: 0 0 8px #00d4ff88;
+      font-family:'Orbitron',monospace; font-size:12px;
+      color:#00d4ff; letter-spacing:2px; margin-bottom:12px;
+      text-shadow:0 0 8px #00d4ff88;
     }
-
-    .popup-equation {
-      font-family: 'Orbitron', monospace;
-      font-size: 16px;
-      color: #00ff9d;
-      text-align: center;
-      margin-bottom: 14px;
-      text-shadow: 0 0 10px #00ff9d88;
-      letter-spacing: 2px;
+    .popup-eq {
+      font-family:'Orbitron',monospace; font-size:15px;
+      color:#00ff9d; text-align:center; margin-bottom:12px;
+      text-shadow:0 0 8px #00ff9d88; letter-spacing:2px;
     }
-
-    .step-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-      margin-bottom: 18px;
-    }
-    .step-list li {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      font-size: 13px;
-      color: #c8ffe8;
-      line-height: 1.5;
-    }
+    .step-list { list-style:none; display:flex; flex-direction:column; gap:6px; margin-bottom:16px; }
+    .step-list li { display:flex; align-items:flex-start; gap:9px; font-size:12px; color:#c8ffe8; line-height:1.5; }
     .step-num {
-      flex-shrink: 0;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: #00d4ff22;
-      border: 1px solid #00d4ff55;
-      color: #00d4ff;
-      font-size: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Orbitron', monospace;
+      flex-shrink:0; width:18px; height:18px; border-radius:50%;
+      background:#00d4ff22; border:1px solid #00d4ff55;
+      color:#00d4ff; font-size:9px;
+      display:flex; align-items:center; justify-content:center;
+      font-family:'Orbitron',monospace;
     }
-    .step-text em {
-      font-style: normal;
-      color: #00ff9d;
-      font-weight: bold;
-    }
+    .step-text em { font-style:normal; color:#00ff9d; font-weight:bold; }
 
     #next-btn {
-      width: 100%;
-      padding: 13px;
-      background: linear-gradient(135deg, #00d4ff22, #00ff9d22);
-      border: 1.5px solid #00d4ff;
-      border-radius: 7px;
-      color: #00d4ff;
-      font-family: 'Orbitron', monospace;
-      font-size: 13px;
-      letter-spacing: 3px;
-      cursor: pointer;
-      text-transform: uppercase;
-      transition: background 0.15s, box-shadow 0.15s;
+      width:100%; padding:12px;
+      background:linear-gradient(135deg,#00d4ff22,#00ff9d22);
+      border:1.5px solid #00d4ff; border-radius:7px;
+      color:#00d4ff; font-family:'Orbitron',monospace;
+      font-size:12px; letter-spacing:3px; cursor:pointer;
+      text-transform:uppercase; transition:background .15s,box-shadow .15s;
     }
-    #next-btn:hover {
-      background: linear-gradient(135deg, #00d4ff44, #00ff9d33);
-      box-shadow: 0 0 18px #00d4ff66;
-    }
-
-    /* ─── Marker hint ─── */
-    #marker-hint {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: #00ff9d55;
-      font-size: 12px;
-      letter-spacing: 2px;
-      pointer-events: none;
-      z-index: 5;
-      text-transform: uppercase;
-    }
-    #marker-hint .crosshair {
-      width: 60px; height: 60px;
-      border: 2px solid #00ff9d33;
-      border-radius: 50%;
-      margin: 0 auto 10px;
-      display: flex; align-items: center; justify-content: center;
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%,100% { opacity:.4; transform: scale(1); }
-      50%      { opacity:1;  transform: scale(1.1); }
-    }
+    #next-btn:hover { background:linear-gradient(135deg,#00d4ff44,#00ff9d33); box-shadow:0 0 16px #00d4ff66; }
   </style>
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════════════════
-     COMPONENTE canvas-text
-     Dibuja la ecuación en un <canvas> 2D → textura sobre PlaneGeometry.
-     No carga fuentes externas .fnt → funciona siempre en Android/HyperOS.
-     ══════════════════════════════════════════════════════════════ -->
+<!-- Componente canvas-text: ecuacion en canvas2D como textura 3D -->
 <script>
 AFRAME.registerComponent('canvas-text', {
   schema: {
-    value:    { type: 'string', default: '' },
-    color:    { type: 'color',  default: '#00FF00' },
-    fontSize: { type: 'int',    default: 112 },
-    cw:       { type: 'int',    default: 1024 },
-    ch:       { type: 'int',    default: 256  }
+    value:    { type:'string', default:'' },
+    color:    { type:'color',  default:'#00FF00' },
+    fontSize: { type:'int',   default:100 },
+    cw:       { type:'int',   default:1024 },
+    ch:       { type:'int',   default:256 }
   },
   init() {
     this.canvas  = document.createElement('canvas');
     this.ctx     = this.canvas.getContext('2d');
     this.texture = new THREE.CanvasTexture(this.canvas);
-    const mat = new THREE.MeshBasicMaterial({  /* shader: flat equivalente */
-      map: this.texture,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide
+    const mat = new THREE.MeshBasicMaterial({
+      map:this.texture, transparent:true, depthWrite:false, side:THREE.DoubleSide
     });
-    /* Relación de aspecto 4:1 → coincide con cw/ch = 1024/256 */
-    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), mat);
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(4,1), mat);
     this.el.setObject3D('mesh', this.mesh);
     this.update();
   },
-
   update() {
-    const { value, color, fontSize, cw, ch } = this.data;
-    const cvs = this.canvas, ctx = this.ctx;
-    cvs.width = cw; cvs.height = ch;
-    ctx.clearRect(0, 0, cw, ch);
-
-    /* ── Fondo con esquinas redondeadas ── */
-    const r = 36;
-    ctx.fillStyle = 'rgba(0,0,0,0.60)';
+    const {value,color,fontSize,cw,ch} = this.data;
+    const cvs=this.canvas, ctx=this.ctx;
+    cvs.width=cw; cvs.height=ch;
+    ctx.clearRect(0,0,cw,ch);
+    const r=36;
+    ctx.fillStyle='rgba(0,0,0,0.62)';
     ctx.beginPath();
-    ctx.moveTo(r, 0); ctx.lineTo(cw-r, 0);
-    ctx.quadraticCurveTo(cw,  0,  cw,  r);
-    ctx.lineTo(cw, ch-r);
-    ctx.quadraticCurveTo(cw, ch, cw-r, ch);
-    ctx.lineTo(r,  ch);
-    ctx.quadraticCurveTo(0,  ch, 0,   ch-r);
-    ctx.lineTo(0,  r);
-    ctx.quadraticCurveTo(0,  0,  r,   0);
-    ctx.closePath();
-    ctx.fill();
-
-    /* ── Borde neón ── */
-    ctx.strokeStyle = color;
-    ctx.lineWidth   = 7;
-    ctx.shadowColor = color;
-    ctx.shadowBlur  = 32;
+    ctx.moveTo(r,0); ctx.lineTo(cw-r,0);
+    ctx.quadraticCurveTo(cw,0,cw,r);
+    ctx.lineTo(cw,ch-r); ctx.quadraticCurveTo(cw,ch,cw-r,ch);
+    ctx.lineTo(r,ch);    ctx.quadraticCurveTo(0,ch,0,ch-r);
+    ctx.lineTo(0,r);     ctx.quadraticCurveTo(0,0,r,0);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle=color; ctx.lineWidth=7;
+    ctx.shadowColor=color; ctx.shadowBlur=30;
     ctx.stroke();
-
-    /* ── Texto centrado, con glow ── */
-    ctx.font         = `bold ${fontSize}px monospace`;
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowBlur   = 28;
-    ctx.shadowColor  = color;
-    ctx.fillStyle    = color;
-    ctx.fillText(value, cw / 2, ch / 2);
-
-    this.texture.needsUpdate = true;
+    ctx.font=`bold ${fontSize}px monospace`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.shadowBlur=26; ctx.shadowColor=color; ctx.fillStyle=color;
+    ctx.fillText(value,cw/2,ch/2);
+    this.texture.needsUpdate=true;
   },
-
   remove() { this.el.removeObject3D('mesh'); }
 });
 </script>
 
-<!-- ══════════════════════════════════════════════════════════════
-     ESCENA A-FRAME
-     • embedded           → UI HTML superpuesta sin conflicto
-     • alpha: true        → cámara transparente (sin fondo negro)
-     • antialias: true    → bordes suaves
-     • SIN logarithmicDepthBuffer → evita pantalla negra en HyperOS/Redmi
-     ══════════════════════════════════════════════════════════════ -->
+<!-- A-SCENE: embedded + alpha + antialias + sin logarithmicDepthBuffer -->
 <a-scene
   embedded
   arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
@@ -389,64 +252,46 @@ AFRAME.registerComponent('canvas-text', {
   vr-mode-ui="enabled: false"
   loading-screen="enabled: false"
 >
-  <!-- ── Marcador Hiro ─────────────────────────────────────────
-       Todo lo que esté DENTRO de <a-marker> se ancla al marcador.
-       Al perder el marcador de vista desaparece automáticamente.
-       ─────────────────────────────────────────────────────────── -->
   <a-marker preset="hiro" id="hiro-marker">
-
     <!--
-      position="0 0.5 0"   → flota 0.5 u sobre el marcador (cámara cenital/mesa)
-      rotation="-90 0 0"   → el plano mira hacia arriba = se ve "parado" frente a cámara
-      scale="4 4 4"        → tamaño impactante, ecuación grande como en la imagen de referencia
-      color: #00FF00       → verde neón puro
-      MeshBasicMaterial    → shader flat, brilla sin depender de luces
+      position="0 0.2 0"    texto sentado sobre el marcador, no flotando muy alto
+      rotation="-90 0 0"    plano horizontal = se ve parado frente a la camara
+      scale="2.5 2.5 2.5"   tamano legible sin salirse del ancho del celular
+      color #00FF00 + MeshBasicMaterial = shader flat, brilla sin luces
     -->
     <a-entity
       id="eq-text"
-      canvas-text="value: 5x + 6 = 10; color: #00FF00; fontSize: 112; cw: 1024; ch: 256"
-      position="0 0.5 0"
+      canvas-text="value: 7x - 4 = 23; color: #00FF00; fontSize: 100; cw: 1024; ch: 256"
+      position="0 0.2 0"
       rotation="-90 0 0"
-      scale="4 4 4"
+      scale="2.5 2.5 2.5"
     ></a-entity>
 
-    <!-- Plataforma neón (base decorativa bajo el texto) -->
-    <a-box
-      position="0 0.01 0"
-      width="5" height="0.04" depth="1.6"
-      color="#001a0d"
-      opacity="0.82"
-      material="shader: flat;"
-    ></a-box>
-    <a-box
-      position="0 0.025 0"
-      width="5.2" height="0.02" depth="1.7"
-      color="#00FF00"
-      opacity="0.20"
-      material="shader: flat;"
-    ></a-box>
-
+    <a-box position="0 0.01 0" width="4.5" height="0.03" depth="1.4"
+           color="#001a0d" opacity="0.85" material="shader:flat;"></a-box>
+    <a-box position="0 0.02 0" width="4.7" height="0.015" depth="1.5"
+           color="#00FF00" opacity="0.18" material="shader:flat;"></a-box>
   </a-marker>
 
   <a-entity camera></a-entity>
 </a-scene>
 
-<!-- ─── HUD ─── -->
+<!-- HUD -->
 <div id="score-bar">
   <div>
-    <div class="label">Score</div>
+    <div class="lbl">Score</div>
     <div id="score-display">000</div>
   </div>
-  <div id="question-counter">Q 1 / ∞</div>
+  <div id="q-counter">Q 1 / 8</div>
 </div>
 
 <div id="flash"></div>
 <div id="neon-border"></div>
 
 <div id="marker-hint">
-  <div class="crosshair">
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <path d="M11 2v4M11 16v4M2 11h4M16 11h4" stroke="#00ff9d" stroke-width="1.5" stroke-linecap="round"/>
+  <div class="ring">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M10 2v3M10 15v3M2 10h3M15 10h3" stroke="#00ff9d" stroke-width="1.5" stroke-linecap="round"/>
     </svg>
   </div>
   Apunta al marcador Hiro
@@ -454,257 +299,144 @@ AFRAME.registerComponent('canvas-text', {
 
 <div id="hud">
   <div id="options-panel">
-    <div class="hint-label">Selecciona la respuesta</div>
-    <button class="opt-btn" id="btn0" onclick="checkAnswer(0)">—</button>
-    <button class="opt-btn" id="btn1" onclick="checkAnswer(1)">—</button>
-    <button class="opt-btn" id="btn2" onclick="checkAnswer(2)">—</button>
+    <div class="hint-lbl">Selecciona la respuesta</div>
+    <button class="opt-btn" id="btn0" onclick="checkAnswer(0)">-</button>
+    <button class="opt-btn" id="btn1" onclick="checkAnswer(1)">-</button>
+    <button class="opt-btn" id="btn2" onclick="checkAnswer(2)">-</button>
   </div>
 </div>
 
-<!-- ─── Pop-up solución ─── -->
 <div id="solution-popup">
-  <span id="popup-badge" class="popup-badge correct">✓ Correcto</span>
+  <span id="popup-badge" class="popup-badge correct">Correcto</span>
   <div class="popup-title">PROCEDIMIENTO PASO A PASO</div>
-  <div class="popup-equation" id="popup-eq">5x + 6 = 10</div>
+  <div class="popup-eq" id="popup-eq"></div>
   <ul class="step-list" id="step-list"></ul>
-  <button id="next-btn" onclick="nextQuestion()">▶ &nbsp;Siguiente Ejercicio</button>
+  <button id="next-btn" onclick="nextQuestion()">Siguiente Ejercicio</button>
 </div>
 
 <script>
-/* ════════════════════════════════════════════════
-   GENERADOR DE EJERCICIOS
-   Tipos: ax + b = c  →  x = (c-b)/a
-          ax - b = c  →  x = (c+b)/a
-          ax = c      →  x = c/a
-          x/a + b = c →  x = a*(c-b)
-   Opciones con distractor aleatorio
-   ════════════════════════════════════════════════ */
-
-let score     = 0;
-let qNumber   = 1;
-let current   = null;  // { eqText, answer (fraction|int), options[], correctIdx, steps[] }
-
-// ── Fracción reducida ──
-function gcd(a, b) { return b === 0 ? Math.abs(a) : gcd(b, a % b); }
-function fraction(num, den) {
-  if (den < 0) { num = -num; den = -den; }
-  const g = gcd(Math.abs(num), den);
-  return { num: num/g, den: den/g };
+function gcd(a,b){ return b===0?Math.abs(a):gcd(b,a%b); }
+function frac(num,den){
+  if(den<0){num=-num;den=-den;}
+  const g=gcd(Math.abs(num),den);
+  return {num:num/g,den:den/g};
 }
-function fmtFrac({ num, den }) {
-  if (den === 1) return String(num);
-  return `${num}/${den}`;
-}
-function fmtFracLatex({ num, den }) {
-  if (den === 1) return String(num);
-  return `${num}/${den}`;
+function fmt(f){ return f.den===1?String(f.num):`${f.num}/${f.den}`; }
+function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
 }
 
-// ── Genera un ejercicio aleatorio ──
-function genExercise() {
-  const type = Math.floor(Math.random() * 4);
-  let eqText, answer, steps, correctLabel;
-
-  if (type === 0) {
-    // ax + b = c
-    const a = randInt(2,9);
-    const b = randInt(1,8);
-    const c = randInt(b+1, b+a*6);
-    eqText = `${a}x + ${b} = ${c}`;
-    const f = fraction(c - b, a);
-    answer = f;
-    correctLabel = fmtFrac(f);
-    steps = [
-      `Ecuación: <em>${eqText}</em>`,
-      `Restamos ${b} en ambos lados: <em>${a}x = ${c - b}</em>`,
+function genExercise(){
+  const type=randInt(0,3);
+  let eq,ans,steps,label;
+  if(type===0){
+    const a=randInt(2,9),b=randInt(1,8),c=randInt(b+2,b+a*6);
+    eq=`${a}x + ${b} = ${c}`; ans=frac(c-b,a); label=fmt(ans);
+    steps=[
+      `Ecuacion: <em>${eq}</em>`,
+      `Restamos ${b}: <em>${a}x = ${c-b}</em>`,
       `Dividimos entre ${a}: <em>x = ${c-b}/${a}</em>`,
-      `Resultado: <em>x = ${correctLabel}</em>`
+      `Resultado: <em>x = ${label}</em>`
     ];
-  } else if (type === 1) {
-    // ax - b = c
-    const a = randInt(2,9);
-    const b = randInt(1,8);
-    const c = randInt(1, a*6);
-    eqText = `${a}x - ${b} = ${c}`;
-    const f = fraction(c + b, a);
-    answer = f;
-    correctLabel = fmtFrac(f);
-    steps = [
-      `Ecuación: <em>${eqText}</em>`,
-      `Sumamos ${b} en ambos lados: <em>${a}x = ${c + b}</em>`,
+  } else if(type===1){
+    const a=randInt(2,9),b=randInt(1,8),c=randInt(1,a*6);
+    eq=`${a}x - ${b} = ${c}`; ans=frac(c+b,a); label=fmt(ans);
+    steps=[
+      `Ecuacion: <em>${eq}</em>`,
+      `Sumamos ${b}: <em>${a}x = ${c+b}</em>`,
       `Dividimos entre ${a}: <em>x = ${c+b}/${a}</em>`,
-      `Resultado: <em>x = ${correctLabel}</em>`
+      `Resultado: <em>x = ${label}</em>`
     ];
-  } else if (type === 2) {
-    // ax = c
-    const a = randInt(2,9);
-    const c = randInt(1, a*7);
-    eqText = `${a}x = ${c}`;
-    const f = fraction(c, a);
-    answer = f;
-    correctLabel = fmtFrac(f);
-    steps = [
-      `Ecuación: <em>${eqText}</em>`,
-      `Dividimos ambos lados entre ${a}`,
+  } else if(type===2){
+    const a=randInt(2,9),c=randInt(1,a*7);
+    eq=`${a}x = ${c}`; ans=frac(c,a); label=fmt(ans);
+    steps=[
+      `Ecuacion: <em>${eq}</em>`,
+      `Dividimos entre ${a}`,
       `<em>x = ${c}/${a}</em>`,
-      `Resultado: <em>x = ${correctLabel}</em>`
+      `Resultado: <em>x = ${label}</em>`
     ];
   } else {
-    // x/a + b = c
-    const a = randInt(2,6);
-    const b = randInt(1,6);
-    const c = randInt(b+1, b+8);
-    eqText = `x/${a} + ${b} = ${c}`;
-    const xVal = a * (c - b);
-    answer = fraction(xVal, 1);
-    correctLabel = String(xVal);
-    steps = [
-      `Ecuación: <em>${eqText}</em>`,
-      `Restamos ${b}: <em>x/${a} = ${c - b}</em>`,
-      `Multiplicamos por ${a}: <em>x = ${a} × ${c-b}</em>`,
-      `Resultado: <em>x = ${correctLabel}</em>`
+    const a=randInt(2,6),b=randInt(1,5),c=randInt(b+2,b+8);
+    eq=`x/${a} + ${b} = ${c}`; const xv=a*(c-b); ans=frac(xv,1); label=String(xv);
+    steps=[
+      `Ecuacion: <em>${eq}</em>`,
+      `Restamos ${b}: <em>x/${a} = ${c-b}</em>`,
+      `Multiplicamos por ${a}: <em>x = ${a} x ${c-b}</em>`,
+      `Resultado: <em>x = ${label}</em>`
     ];
   }
-
-  // Genera 3 opciones únicas (1 correcta + 2 distractores)
-  const options = [correctLabel];
-  while (options.length < 3) {
-    const d = makeDistractor(answer);
-    if (!options.includes(d)) options.push(d);
+  const opts=[label];
+  while(opts.length<3){
+    const d=fmt(frac(ans.num+randInt(1,4)*(Math.random()<.5?1:-1)*ans.den,ans.den));
+    if(!opts.includes(d)) opts.push(d);
   }
-  // Mezcla
-  shuffle(options);
-  const correctIdx = options.indexOf(correctLabel);
-
-  return { eqText, answer, correctLabel, options, correctIdx, steps };
+  shuffle(opts);
+  return {eq,ans,label,opts,correct:opts.indexOf(label),steps};
 }
 
-function makeDistractor(f) {
-  const delta = randInt(1, 4) * (Math.random() < 0.5 ? 1 : -1);
-  const d = fraction(f.num + delta * f.den, f.den);
-  return fmtFrac(d);
-}
+let score=0,qNum=1,cur=null;
 
-function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-}
-
-/* ════════════════════════════════════════════════
-   UI
-   ════════════════════════════════════════════════ */
-function loadQuestion() {
-  current = genExercise();
-
-  // 3D text — actualiza el componente canvas-text
-  const eqEntity = document.querySelector('#eq-text');
-  // Espera al componente si es la primera carga, luego actualiza
-  if (eqEntity.components && eqEntity.components['canvas-text']) {
-    eqEntity.setAttribute('canvas-text', 'value', current.eqText);
-  } else {
-    eqEntity.addEventListener('componentinitialized', function onCT(e) {
-      if (e.detail.name === 'canvas-text') {
-        eqEntity.setAttribute('canvas-text', 'value', current.eqText);
-        eqEntity.removeEventListener('componentinitialized', onCT);
-      }
+function loadQuestion(){
+  cur=genExercise();
+  const ent=document.querySelector('#eq-text');
+  const doSet=()=>ent.setAttribute('canvas-text','value',cur.eq);
+  if(ent.components&&ent.components['canvas-text']){ doSet(); }
+  else {
+    ent.addEventListener('componentinitialized',function h(e){
+      if(e.detail.name==='canvas-text'){doSet();ent.removeEventListener('componentinitialized',h);}
     });
   }
-
-  // Botones
-  const btns = document.querySelectorAll('.opt-btn');
-  btns.forEach((btn, i) => {
-    btn.textContent = `x = ${current.options[i]}`;
-    btn.className = 'opt-btn';
-    btn.disabled = false;
+  document.querySelectorAll('.opt-btn').forEach((b,i)=>{
+    b.textContent=`x = ${cur.opts[i]}`;
+    b.className='opt-btn'; b.disabled=false;
   });
-
-  // Counter
-  document.getElementById('question-counter').textContent = `Q ${qNumber} / ∞`;
-
-  // Ocultar popup
+  document.getElementById('q-counter').textContent=`Q ${qNum} / oo`;
   document.getElementById('solution-popup').classList.remove('visible');
 }
 
-function checkAnswer(idx) {
-  if (!current) return;
-
-  const btns = document.querySelectorAll('.opt-btn');
-  btns.forEach(b => b.disabled = true);
-
-  const isCorrect = (idx === current.correctIdx);
-
-  // Feedback visual
-  triggerFlash(isCorrect ? 'green' : 'red');
-
-  // Highlight botones
-  btns[current.correctIdx].classList.add('correct');
-  if (!isCorrect) btns[idx].classList.add('wrong');
-
-  // Score
-  if (isCorrect) {
-    score = Math.max(0, score + 10);
-  } else {
-    score = Math.max(0, score - 5);
-  }
-  updateScore();
-
-  // Popup
-  showSolution(isCorrect);
+function checkAnswer(idx){
+  if(!cur) return;
+  document.querySelectorAll('.opt-btn').forEach(b=>b.disabled=true);
+  const ok=idx===cur.correct;
+  doFlash(ok?'green':'red');
+  document.querySelectorAll('.opt-btn')[cur.correct].classList.add('correct');
+  if(!ok) document.querySelectorAll('.opt-btn')[idx].classList.add('wrong');
+  score=Math.max(0,score+(ok?10:-5));
+  document.getElementById('score-display').textContent=String(score).padStart(3,'0');
+  showPopup(ok);
 }
 
-function triggerFlash(color) {
-  const flash  = document.getElementById('flash');
-  const border = document.getElementById('neon-border');
-  flash.className  = color;
-  border.className = color;
-  setTimeout(() => {
-    flash.classList.add('fade');
-    border.className = '';
-  }, 600);
-  setTimeout(() => { flash.className = ''; }, 750);
+function doFlash(color){
+  const f=document.getElementById('flash'),nb=document.getElementById('neon-border');
+  f.className=color; nb.className=color;
+  setTimeout(()=>{f.classList.add('fade');nb.className='';},600);
+  setTimeout(()=>{f.className='';},760);
 }
 
-function updateScore() {
-  document.getElementById('score-display').textContent =
-    String(score).padStart(3, '0');
-}
-
-function showSolution(isCorrect) {
-  const popup  = document.getElementById('solution-popup');
-  const badge  = document.getElementById('popup-badge');
-  const eqEl   = document.getElementById('popup-eq');
-  const list   = document.getElementById('step-list');
-
-  badge.className = `popup-badge ${isCorrect ? 'correct' : 'wrong'}`;
-  badge.textContent = isCorrect ? '✓  Correcto  +10' : '✗  Incorrecto  −5';
-
-  eqEl.textContent = current.eqText;
-
-  list.innerHTML = '';
-  current.steps.forEach((s, i) => {
-    const li = document.createElement('li');
-    li.innerHTML = `<span class="step-num">${i+1}</span><span class="step-text">${s}</span>`;
+function showPopup(ok){
+  const pop=document.getElementById('solution-popup');
+  const badge=document.getElementById('popup-badge');
+  document.getElementById('popup-eq').textContent=cur.eq;
+  badge.className=`popup-badge ${ok?'correct':'wrong'}`;
+  badge.textContent=ok?'Correcto +10':'Incorrecto -5';
+  const list=document.getElementById('step-list');
+  list.innerHTML='';
+  cur.steps.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="step-num">${i+1}</span><span class="step-text">${s}</span>`;
     list.appendChild(li);
   });
-
-  popup.classList.add('visible');
+  pop.classList.add('visible');
 }
 
-function nextQuestion() {
-  qNumber++;
-  loadQuestion();
-}
+function nextQuestion(){qNum++;loadQuestion();}
 
-/* ════════════════════════════════════════════════
-   INICIO
-   ════════════════════════════════════════════════ */
-window.addEventListener('DOMContentLoaded', () => {
-  updateScore();
-  loadQuestion();
-});
+window.addEventListener('DOMContentLoaded',loadQuestion);
 </script>
 </body>
 </html>
