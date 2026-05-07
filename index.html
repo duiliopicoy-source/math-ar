@@ -1,665 +1,591 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AR · Ecuaciones de Segundo Grado</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="theme-color" content="#000"/>
+<title>Ecuaciones AR</title>
 <style>
-  :root {
-    --neon: #00f5c4;
-    --neon2: #7b61ff;
-    --danger: #ff4560;
-    --warn: #ffd166;
-    --bg: #080c14;
-    --card: rgba(255,255,255,0.04);
-    --border: rgba(0,245,196,0.2);
-    --text: #e8f4f0;
-    --muted: #6b7c7a;
-    --radius: 14px;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Syne', sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+:root{--g:#39ff14;--c:#00e5ff;--o:#ff8c00;--r:#ff2244;--gold:#ffd700;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;background:#000;font-family:'JetBrains Mono',monospace;}
 
-  /* ── HEADER ── */
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-    background: rgba(8,12,20,0.9);
-    backdrop-filter: blur(12px);
-    position: sticky; top: 0; z-index: 100;
-  }
-  .logo { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; }
-  .logo span { color: var(--neon); }
-  .badge {
-    font-family: 'Space Mono', monospace;
-    font-size: 11px; padding: 4px 10px;
-    border: 1px solid var(--neon);
-    border-radius: 20px; color: var(--neon);
-    letter-spacing: 1px;
-  }
+/* ── CÁMARA (fondo real) ── */
+#video{
+  position:fixed;inset:0;z-index:0;
+  width:100%;height:100%;
+  object-fit:cover;
+  /* sin espejo para cámara trasera */
+}
 
-  /* ── LAYOUT ── */
-  main {
-    max-width: 520px;
-    margin: 0 auto;
-    padding: 20px 16px 80px;
-    display: flex; flex-direction: column; gap: 20px;
-  }
+/* ── CANVAS encima de la cámara ── */
+#ar{
+  position:fixed;inset:0;z-index:1;
+  pointer-events:none;
+}
 
-  /* ── CAMERA PANEL ── */
-  .cam-panel {
-    position: relative;
-    border-radius: var(--radius);
-    overflow: hidden;
-    border: 1px solid var(--border);
-    background: #000;
-    aspect-ratio: 4/3;
-  }
-  #video {
-    width: 100%; height: 100%;
-    object-fit: cover;
-    display: block;
-    filter: brightness(0.85) saturate(1.1);
-  }
-  .cam-overlay {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    pointer-events: none;
-  }
-  .scan-frame {
-    width: 72%; max-width: 280px;
-    aspect-ratio: 3/1;
-    position: relative;
-  }
-  .scan-frame::before, .scan-frame::after,
-  .scan-frame .corner-bl, .scan-frame .corner-br {
-    content: ''; position: absolute;
-    width: 22px; height: 22px;
-    border-color: var(--neon); border-style: solid;
-  }
-  .scan-frame::before  { top: 0;    left: 0;  border-width: 2px 0 0 2px; border-radius: 4px 0 0 0; }
-  .scan-frame::after   { top: 0;    right: 0; border-width: 2px 2px 0 0; border-radius: 0 4px 0 0; }
-  .scan-frame .corner-bl { bottom: 0; left: 0;  border-width: 0 0 2px 2px; border-radius: 0 0 0 4px; }
-  .scan-frame .corner-br { bottom: 0; right: 0; border-width: 0 2px 2px 0; border-radius: 0 0 4px 0; }
-  .scan-line {
-    position: absolute; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--neon), transparent);
-    animation: scan 2s linear infinite;
-    box-shadow: 0 0 8px var(--neon);
-  }
-  @keyframes scan { 0%{top:0%} 100%{top:100%} }
-  .cam-hint {
-    margin-top: 14px;
-    font-size: 12px; letter-spacing: 0.5px;
-    color: rgba(0,245,196,0.8);
-    font-family: 'Space Mono', monospace;
-    text-shadow: 0 0 10px var(--neon);
-  }
-  .cam-inactive {
-    position: absolute; inset: 0;
-    background: linear-gradient(135deg, #0d1a2a 0%, #0a1520 100%);
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 12px;
-  }
-  .cam-icon { font-size: 48px; opacity: 0.4; }
-  #btn-cam {
-    background: var(--neon); color: #000;
-    border: none; padding: 10px 24px;
-    border-radius: 30px; font-family: 'Syne', sans-serif;
-    font-weight: 700; font-size: 13px; cursor: pointer;
-    letter-spacing: 0.5px;
-    transition: transform 0.15s, box-shadow 0.15s;
-    box-shadow: 0 0 20px rgba(0,245,196,0.4);
-  }
-  #btn-cam:hover { transform: scale(1.04); box-shadow: 0 0 30px rgba(0,245,196,0.6); }
-  .ar-tag {
-    position: absolute; top: 12px; left: 12px;
-    background: rgba(0,245,196,0.15);
-    border: 1px solid var(--neon);
-    border-radius: 6px;
-    padding: 4px 9px;
-    font-size: 10px; font-family: 'Space Mono', monospace;
-    color: var(--neon); letter-spacing: 1px;
-    backdrop-filter: blur(6px);
-  }
+/* ── SCANLINES ── */
+#scan{
+  position:fixed;inset:0;z-index:2;pointer-events:none;
+  background:repeating-linear-gradient(0deg,
+    transparent,transparent 3px,
+    rgba(57,255,20,0.012) 3px,rgba(57,255,20,0.012) 4px);
+}
 
-  /* ── PROBLEM SELECTOR ── */
-  .section-title {
-    font-size: 11px; font-family: 'Space Mono', monospace;
-    color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-  .problem-picker {
-    display: flex; gap: 8px; flex-wrap: wrap;
-  }
-  .prob-btn {
-    flex: 1; min-width: 90px;
-    padding: 9px 6px;
-    border-radius: 10px;
-    border: 1px solid rgba(123,97,255,0.3);
-    background: rgba(123,97,255,0.07);
-    color: var(--text); font-family: 'Space Mono', monospace;
-    font-size: 11px; cursor: pointer;
-    transition: all 0.2s; text-align: center;
-    line-height: 1.5;
-  }
-  .prob-btn:hover  { border-color: var(--neon2); background: rgba(123,97,255,0.18); }
-  .prob-btn.active { border-color: var(--neon); background: rgba(0,245,196,0.12); color: var(--neon); }
+/* ── VISOR CORNERS ── */
+.vc{position:fixed;width:28px;height:28px;z-index:3;pointer-events:none;}
+.tl{top:10px;left:10px;border-top:2px solid var(--g);border-left:2px solid var(--g);}
+.tr{top:10px;right:10px;border-top:2px solid var(--g);border-right:2px solid var(--g);}
+#bl{position:fixed;left:10px;width:28px;height:28px;z-index:3;pointer-events:none;border-bottom:2px solid var(--g);border-left:2px solid var(--g);}
+#br{position:fixed;right:10px;width:28px;height:28px;z-index:3;pointer-events:none;border-bottom:2px solid var(--g);border-right:2px solid var(--g);}
 
-  /* ── EQUATION DISPLAY ── */
-  .eq-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-    position: relative; overflow: hidden;
-  }
-  .eq-card::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, var(--neon2), var(--neon));
-  }
-  .eq-label {
-    font-size: 11px; font-family: 'Space Mono', monospace;
-    color: var(--muted); letter-spacing: 2px; margin-bottom: 12px;
-  }
-  .equation {
-    font-family: 'Space Mono', monospace;
-    font-size: 26px; font-weight: 700;
-    color: #fff; letter-spacing: -1px;
-    text-align: center;
-    text-shadow: 0 0 20px rgba(0,245,196,0.3);
-  }
-  .equation sup { font-size: 14px; vertical-align: super; }
-  .eq-data {
-    display: flex; gap: 16px; margin-top: 14px;
-    justify-content: center;
-  }
-  .coef-chip {
-    background: rgba(123,97,255,0.15);
-    border: 1px solid rgba(123,97,255,0.3);
-    border-radius: 8px; padding: 5px 12px;
-    font-family: 'Space Mono', monospace; font-size: 12px; color: var(--neon2);
-  }
-  .coef-chip b { color: #fff; font-weight: 700; }
+/* ── TOP BAR ── */
+#topbar{
+  position:fixed;top:0;left:0;right:0;z-index:5;
+  height:46px;
+  background:linear-gradient(180deg,rgba(0,0,0,0.82) 0%,transparent 100%);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 14px;
+}
+#topbar h1{
+  font-family:'Orbitron',monospace;font-size:0.68rem;
+  font-weight:900;letter-spacing:3px;color:var(--g);
+  text-shadow:0 0 14px #39ff14aa;
+}
+.live{font-size:0.58rem;letter-spacing:2px;color:rgba(57,255,20,0.45);}
+.live b{animation:blink 1.2s step-end infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 
-  /* ── ANSWER BUTTONS ── */
-  .answers-wrap { display: flex; flex-direction: column; gap: 10px; }
-  .ans-btn {
-    padding: 15px 18px;
-    border-radius: var(--radius);
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04);
-    color: var(--text); font-family: 'Space Mono', monospace; font-size: 13px;
-    cursor: pointer; display: flex; align-items: center; gap: 12px;
-    transition: all 0.2s; text-align: left;
-  }
-  .ans-btn:hover:not(:disabled) {
-    border-color: var(--neon2); background: rgba(123,97,255,0.12);
-    transform: translateX(4px);
-  }
-  .ans-btn .opt-label {
-    width: 28px; height: 28px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; flex-shrink: 0;
-    border: 1px solid rgba(255,255,255,0.2);
-    background: rgba(255,255,255,0.06);
-  }
-  .ans-btn.correct {
-    border-color: var(--neon); background: rgba(0,245,196,0.12);
-    animation: pulse-correct 0.4s ease;
-  }
-  .ans-btn.correct .opt-label { background: var(--neon); color: #000; border-color: var(--neon); }
-  .ans-btn.wrong {
-    border-color: var(--danger); background: rgba(255,69,96,0.1);
-    animation: shake 0.4s ease;
-  }
-  .ans-btn.wrong .opt-label { background: var(--danger); color: #fff; border-color: var(--danger); }
-  .ans-btn:disabled { cursor: default; }
+/* ════════════════════════════════
+   PANTALLA DE PERMISO (inicio)
+════════════════════════════════ */
+#perm{
+  position:fixed;inset:0;z-index:100;
+  background:radial-gradient(ellipse at center,#031000 0%,#000 100%);
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:22px;padding:40px 30px;text-align:center;
+}
+#perm .logo{
+  font-family:'Orbitron',monospace;
+  font-size:2rem;font-weight:900;
+  color:var(--g);
+  text-shadow:0 0 30px var(--g),0 0 60px rgba(57,255,20,0.2);
+  line-height:1.2;
+}
+#perm p{
+  font-size:0.75rem;color:rgba(57,255,20,0.5);
+  line-height:1.85;max-width:280px;
+}
+#perm p span{color:var(--g);}
+#btnperm{
+  padding:16px 42px;
+  background:rgba(57,255,20,0.08);
+  border:2px solid var(--g);
+  color:var(--g);font-family:'Orbitron',monospace;
+  font-size:0.85rem;font-weight:900;letter-spacing:3px;
+  border-radius:12px;cursor:pointer;
+  animation:glow 2s ease-in-out infinite;
+}
+@keyframes glow{0%,100%{box-shadow:0 0 14px #39ff1444;}50%{box-shadow:0 0 32px #39ff14cc;}}
+#errormsg{
+  color:var(--r);font-size:0.72rem;
+  line-height:1.7;display:none;
+  background:rgba(255,34,68,0.08);
+  border:1px solid rgba(255,34,68,0.3);
+  border-radius:8px;padding:10px 14px;
+  max-width:280px;
+}
 
-  @keyframes pulse-correct {
-    0%{transform:scale(1)} 40%{transform:scale(1.02)} 100%{transform:scale(1)}
-  }
-  @keyframes shake {
-    0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 60%{transform:translateX(8px)}
-  }
+/* ════════════════════════════════
+   PANEL INFERIOR
+════════════════════════════════ */
+#panel{
+  position:fixed;bottom:0;left:0;right:0;z-index:10;
+  background:rgba(0,0,0,0.95);
+  border-top:1px solid rgba(57,255,20,0.18);
+  border-radius:20px 20px 0 0;
+  display:flex;flex-direction:column;
+}
+#handle{
+  width:38px;height:4px;
+  background:rgba(57,255,20,0.22);
+  border-radius:2px;margin:10px auto 4px;flex-shrink:0;
+}
 
-  /* ── ERROR OVERLAY ── */
-  #error-overlay {
-    position: fixed; inset: 0; z-index: 999;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    background: rgba(8,12,20,0.88);
-    backdrop-filter: blur(6px);
-    pointer-events: none;
-    opacity: 0; transition: opacity 0.2s;
-  }
-  #error-overlay.show { opacity: 1; pointer-events: all; }
-  .error-box {
-    border: 2px solid var(--danger);
-    border-radius: 16px;
-    padding: 32px 40px;
-    text-align: center;
-    background: rgba(255,69,96,0.08);
-    animation: errorPop 0.3s cubic-bezier(0.3,1.5,0.5,1);
-  }
-  @keyframes errorPop {
-    0%{transform:scale(0.7)} 100%{transform:scale(1)}
-  }
-  .error-icon { font-size: 52px; margin-bottom: 12px; }
-  .error-title {
-    font-size: 22px; font-weight: 800; color: var(--danger);
-    letter-spacing: -0.5px; margin-bottom: 6px;
-  }
-  .error-sub { font-size: 14px; color: var(--muted); font-family: 'Space Mono', monospace; }
+/* tabs */
+#tabs{
+  display:flex;padding:0 14px;
+  border-bottom:1px solid rgba(57,255,20,0.12);
+  flex-shrink:0;
+}
+.tab{
+  flex:1;padding:10px 4px;text-align:center;
+  font-size:0.63rem;letter-spacing:1px;text-transform:uppercase;
+  color:rgba(57,255,20,0.35);cursor:pointer;
+  border-bottom:2px solid transparent;transition:all 0.2s;
+}
+.tab.on{color:var(--g);border-bottom-color:var(--g);}
 
-  /* ── SOLUTION PANEL ── */
-  #solution-panel {
-    border-radius: var(--radius);
-    border: 1px solid rgba(0,245,196,0.4);
-    background: linear-gradient(135deg, rgba(0,245,196,0.06) 0%, rgba(123,97,255,0.06) 100%);
-    padding: 20px;
-    display: none; overflow: hidden;
-    animation: slideIn 0.4s ease;
-  }
-  #solution-panel.show { display: block; }
-  @keyframes slideIn {
-    from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)}
-  }
-  .sol-header {
-    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
-  }
-  .sol-icon {
-    width: 32px; height: 32px; border-radius: 50%;
-    background: var(--neon); color: #000;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; font-weight: 800; flex-shrink: 0;
-  }
-  .sol-title { font-size: 15px; font-weight: 800; color: var(--neon); }
-  .sol-step {
-    background: rgba(0,0,0,0.3);
-    border-radius: 10px; padding: 12px 14px;
-    margin-bottom: 10px;
-    font-family: 'Space Mono', monospace; font-size: 12px;
-    line-height: 1.8; color: #c8ddd9;
-    border-left: 2px solid rgba(0,245,196,0.4);
-  }
-  .sol-step .step-num {
-    display: inline-block; color: var(--neon); font-weight: 700; margin-right: 6px;
-  }
-  .sol-step .formula {
-    display: block; text-align: center;
-    font-size: 13px; color: #fff;
-    margin: 8px 0 4px; letter-spacing: 0.5px;
-  }
-  .sol-step .highlight {
-    color: var(--neon); font-weight: 700;
-  }
-  .sol-result {
-    background: rgba(0,245,196,0.1);
-    border: 1px solid rgba(0,245,196,0.4);
-    border-radius: 10px; padding: 14px;
-    text-align: center; margin-top: 4px;
-  }
-  .sol-result .roots {
-    font-family: 'Space Mono', monospace; font-size: 16px;
-    color: #fff; font-weight: 700;
-  }
-  .sol-result .roots span { color: var(--neon); }
-  .btn-next {
-    width: 100%; margin-top: 14px;
-    padding: 13px;
-    border-radius: 10px;
-    border: 1px solid var(--neon2);
-    background: rgba(123,97,255,0.15);
-    color: var(--neon2); font-family: 'Syne', sans-serif;
-    font-weight: 700; font-size: 14px; cursor: pointer;
-    letter-spacing: 0.5px;
-    transition: all 0.2s;
-  }
-  .btn-next:hover { background: rgba(123,97,255,0.3); transform: scale(1.01); }
+/* scroll interior */
+.tcontent{display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px 22px;max-height:45vh;}
+.tcontent.on{display:block;}
+.tcontent::-webkit-scrollbar{display:none;}
 
-  /* ── PROGRESS ── */
-  .progress-bar {
-    height: 3px;
-    background: rgba(255,255,255,0.07);
-    border-radius: 3px; overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--neon2), var(--neon));
-    border-radius: 3px;
-    transition: width 0.4s ease;
-  }
-  .score-row {
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 12px; font-family: 'Space Mono', monospace; color: var(--muted);
-    margin-bottom: 6px;
-  }
-  .score-row .pts { color: var(--warn); font-weight: 700; }
+/* ecuación grande */
+#eqlabel{
+  font-family:'Orbitron',monospace;font-size:1rem;font-weight:900;
+  color:#fff;text-shadow:0 0 16px var(--g);
+  text-align:center;padding:6px 0 12px;letter-spacing:1px;
+}
 
-  /* ── GLOW BG ── */
-  body::before {
-    content: '';
-    position: fixed; top: -200px; right: -200px;
-    width: 500px; height: 500px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(0,245,196,0.05) 0%, transparent 70%);
-    pointer-events: none;
-  }
-  body::after {
-    content: '';
-    position: fixed; bottom: -200px; left: -200px;
-    width: 500px; height: 500px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(123,97,255,0.07) 0%, transparent 70%);
-    pointer-events: none;
-  }
+/* coeficientes */
+.cgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:13px;}
+.cbox{
+  background:rgba(57,255,20,0.04);border:1px solid rgba(57,255,20,0.18);
+  border-radius:11px;padding:9px 6px;
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+}
+.cbox label{font-size:0.58rem;letter-spacing:1px;color:rgba(57,255,20,0.4);text-transform:uppercase;}
+.cbox input{
+  width:100%;background:transparent;
+  border:none;border-bottom:2px solid rgba(57,255,20,0.28);
+  color:var(--g);font-family:'JetBrains Mono',monospace;
+  font-size:1.2rem;font-weight:700;
+  text-align:center;outline:none;padding:2px 0;
+}
+.cbox input:focus{border-bottom-color:var(--g);}
+
+/* botones */
+.brow{display:flex;gap:9px;}
+.btn{
+  flex:1;padding:13px 6px;border-radius:9px;cursor:pointer;
+  font-family:'JetBrains Mono',monospace;
+  font-size:0.72rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  border:1px solid;transition:all 0.15s;
+}
+.bs{background:rgba(57,255,20,0.1);border-color:rgba(57,255,20,0.45);color:var(--g);}
+.bs:active{background:rgba(57,255,20,0.25);transform:scale(.97);}
+.br2{background:rgba(0,229,255,0.07);border-color:rgba(0,229,255,0.35);color:var(--c);}
+.br2:active{background:rgba(0,229,255,0.2);transform:scale(.97);}
+
+/* resolución */
+.rtitle{
+  font-family:'Orbitron',monospace;font-size:0.6rem;
+  letter-spacing:2px;color:rgba(57,255,20,0.3);
+  text-transform:uppercase;
+  padding:2px 0 10px;border-top:1px solid rgba(57,255,20,0.1);
+}
+.paso{
+  background:rgba(5,14,3,0.9);
+  border-left:3px solid var(--g);
+  border-radius:0 9px 9px 0;
+  padding:10px 12px;margin-bottom:9px;
+  opacity:0;animation:fi 0.32s ease both;
+}
+.paso:nth-child(1){animation-delay:.04s}
+.paso:nth-child(2){animation-delay:.10s}
+.paso:nth-child(3){animation-delay:.17s}
+.paso:nth-child(4){animation-delay:.24s}
+.paso:nth-child(5){animation-delay:.31s}
+.paso:nth-child(6){animation-delay:.38s}
+@keyframes fi{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.ptit{font-size:0.57rem;letter-spacing:1.5px;text-transform:uppercase;color:rgba(57,255,20,0.3);margin-bottom:5px;}
+.pbody{font-size:0.8rem;line-height:1.82;color:#bbb;}
+.pbody .w {color:#fff;font-weight:700;}
+.pbody .g {color:var(--g);font-weight:700;}
+.pbody .c {color:var(--c);font-weight:700;}
+.pbody .o {color:var(--o);font-weight:700;}
+.pbody .r {color:var(--r);font-weight:700;}
+.pbody .gd{color:var(--gold);font-weight:700;}
+
+.resbox{
+  border-radius:13px;padding:16px 12px;
+  text-align:center;margin-top:4px;
+  opacity:0;animation:fi 0.4s .45s ease both;
+}
+.resbox.dos {background:rgba(0,229,255,0.07);border:1px solid rgba(0,229,255,0.28);}
+.resbox.uno {background:rgba(255,215,0,0.07);border:1px solid rgba(255,215,0,0.28);}
+.resbox.no  {background:rgba(255,34,68,0.06); border:1px solid rgba(255,34,68,0.26);}
+.reslbl{
+  font-family:'Orbitron',monospace;font-size:0.6rem;
+  letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;
+}
+.resbox.dos .reslbl{color:var(--c);}
+.resbox.uno .reslbl{color:var(--gold);}
+.resbox.no  .reslbl{color:var(--r);}
+.roots{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+.rbox{background:rgba(0,0,0,0.5);border-radius:9px;padding:9px 16px;min-width:90px;}
+.rn{font-size:0.58rem;color:rgba(255,255,255,0.28);margin-bottom:3px;}
+.rv{font-family:'Orbitron',monospace;font-size:1.05rem;font-weight:900;}
+.rx1{color:var(--c);text-shadow:0 0 10px var(--c);}
+.rx2{color:var(--o);text-shadow:0 0 10px var(--o);}
+.rxd{color:var(--gold);text-shadow:0 0 10px var(--gold);}
+.rxc{color:var(--r);font-size:0.76rem;}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="logo">AR<span>·</span>Math</div>
-  <div class="badge">2° GRADO</div>
-</header>
+<!-- VIDEO CÁMARA -->
+<video id="video" autoplay playsinline muted></video>
+<!-- CANVAS AR -->
+<canvas id="ar"></canvas>
+<!-- SCANLINES -->
+<div id="scan"></div>
+<!-- VISOR -->
+<div class="vc tl"></div>
+<div class="vc tr"></div>
+<div id="bl"></div>
+<div id="br"></div>
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>ECUACIONES AR</h1>
+  <span class="live"><b>●</b> CÁMARA EN VIVO</span>
+</div>
 
-<div id="error-overlay">
-  <div class="error-box">
-    <div class="error-icon">✗</div>
-    <div class="error-title">Error — inténtalo de nuevo</div>
-    <div class="error-sub">Revisa las opciones</div>
+<!-- ════ PANTALLA DE PERMISO ════ -->
+<div id="perm">
+  <div class="logo">📷<br>AR<br>ecuaciones</div>
+  <p>
+    La ecuación cuadrática flotará<br>
+    <span>sobre lo que ve tu cámara.</span><br>
+    Necesitamos permiso para activarla.
+  </p>
+  <button id="btnperm" onclick="pedirPermiso()">
+    ACTIVAR CÁMARA
+  </button>
+  <div id="errormsg"></div>
+</div>
+
+<!-- ════ PANEL INFERIOR ════ -->
+<div id="panel">
+  <div id="handle"></div>
+
+  <div id="tabs">
+    <div class="tab on"  id="t0" onclick="tab(0)">📐 Ingresar</div>
+    <div class="tab"     id="t1" onclick="tab(1)">🔢 Resolución</div>
+  </div>
+
+  <!-- TAB 0 -->
+  <div class="tcontent on" id="tc0">
+    <div id="eqlabel">ax² + bx + c = 0</div>
+    <div class="cgrid">
+      <div class="cbox"><label>a · x²</label><input type="number" id="ia" value="1"  inputmode="decimal"></div>
+      <div class="cbox"><label>b · x</label> <input type="number" id="ib" value="-5" inputmode="decimal"></div>
+      <div class="cbox"><label>c</label>      <input type="number" id="ic" value="6"  inputmode="decimal"></div>
+    </div>
+    <div class="brow">
+      <button class="btn bs"  onclick="resolver()">▶ RESOLVER</button>
+      <button class="btn br2" onclick="aleatorio()">⚡ RANDOM</button>
+    </div>
+  </div>
+
+  <!-- TAB 1 -->
+  <div class="tcontent" id="tc1">
+    <div id="pasos-out"></div>
+    <div id="result-out"></div>
   </div>
 </div>
 
-<main>
-
-  <!-- SCORE -->
-  <div>
-    <div class="score-row">
-      <span>PROGRESO</span>
-      <span class="pts" id="score-txt">0 pts</span>
-    </div>
-    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
-  </div>
-
-  <!-- CAMERA -->
-  <div class="cam-panel" id="cam-panel">
-    <div class="cam-inactive" id="cam-inactive">
-      <div class="cam-icon">📷</div>
-      <div style="font-size:13px;color:var(--muted);text-align:center;line-height:1.6;">Activa la cámara para<br>modo Realidad Aumentada</div>
-      <button id="btn-cam" onclick="startCamera()">Activar cámara AR</button>
-    </div>
-    <video id="video" autoplay playsinline muted style="display:none"></video>
-    <div class="cam-overlay" id="cam-overlay" style="display:none">
-      <div class="ar-tag">● AR LIVE</div>
-      <div class="scan-frame">
-        <div class="scan-line"></div>
-        <div class="corner-bl"></div>
-        <div class="corner-br"></div>
-      </div>
-      <div class="cam-hint">APUNTA AL PROBLEMA</div>
-    </div>
-  </div>
-
-  <!-- PROBLEM PICKER -->
-  <div>
-    <div class="section-title">Selecciona un ejercicio</div>
-    <div class="problem-picker" id="problem-picker"></div>
-  </div>
-
-  <!-- EQUATION -->
-  <div class="eq-card" id="eq-card">
-    <div class="eq-label">ECUACIÓN DETECTADA</div>
-    <div class="equation" id="eq-display"></div>
-    <div class="eq-data" id="eq-coefs"></div>
-  </div>
-
-  <!-- ANSWERS -->
-  <div>
-    <div class="section-title">Elige la respuesta correcta</div>
-    <div class="answers-wrap" id="answers-wrap"></div>
-  </div>
-
-  <!-- SOLUTION -->
-  <div id="solution-panel"></div>
-
-</main>
-
 <script>
-const PROBLEMS = [
-  { label:'x²-5x+6=0',  a:1, b:-5, c:6,   desc:'x² − 5x + 6 = 0' },
-  { label:'x²-x-12=0',  a:1, b:-1, c:-12,  desc:'x² − x − 12 = 0' },
-  { label:'2x²+3x-2=0', a:2, b:3,  c:-2,   desc:'2x² + 3x − 2 = 0' },
-  { label:'x²-4=0',     a:1, b:0,  c:-4,   desc:'x² − 4 = 0' },
-  { label:'3x²-7x+2=0', a:3, b:-7, c:2,    desc:'3x² − 7x + 2 = 0' },
-  { label:'x²+6x+9=0',  a:1, b:6,  c:9,    desc:'x² + 6x + 9 = 0' },
-];
-
-let current = 0;
-let score   = 0;
-let answered = false;
-
-function frac(n,d){
-  if(d===0) return '∞';
-  if(n%d===0) return ''+(n/d);
-  function gcd(a,b){return b?gcd(b,a%b):Math.abs(a);}
-  const g=gcd(Math.abs(n),Math.abs(d));
-  return (d<0?-n/g:n/g)+'/'+(Math.abs(d/g));
+// ══════════════════════════════════
+//  TABS
+// ══════════════════════════════════
+function tab(i){
+  [0,1].forEach(j=>{
+    document.getElementById('t'+j).classList.toggle('on',j===i);
+    document.getElementById('tc'+j).classList.toggle('on',j===i);
+  });
+  ajustarEsquinas();
 }
 
-function solveQuadratic(a,b,c){
-  const disc = b*b - 4*a*c;
-  if(disc < 0) return {type:'complex', disc};
-  if(disc === 0){
-    const r = frac(-b, 2*a);
-    return {type:'double', x1:r, x2:r, disc, r:-b/(2*a)};
+// ══════════════════════════════════
+//  PEDIR PERMISO DE CÁMARA
+// ══════════════════════════════════
+async function pedirPermiso(){
+  const btn = document.getElementById('btnperm');
+  const err = document.getElementById('errormsg');
+  btn.textContent = 'Solicitando...';
+  btn.style.opacity = '0.6';
+  err.style.display = 'none';
+
+  try {
+    // primero intenta cámara trasera
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:{exact:'environment'}, width:{ideal:1280}, height:{ideal:720} },
+        audio:false
+      });
+    } catch(e){
+      // si falla (ej. solo tiene frontal), pedir cualquier cámara
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ width:{ideal:1280}, height:{ideal:720} },
+        audio:false
+      });
+    }
+
+    const v = document.getElementById('video');
+    v.srcObject = stream;
+    await v.play();
+
+    // ocultar pantalla de permiso
+    document.getElementById('perm').style.display = 'none';
+
+    // iniciar canvas y loop
+    initAR();
+    resolver(); // carga ecuación inicial
+    loop();
+
+  } catch(e){
+    btn.textContent = 'ACTIVAR CÁMARA';
+    btn.style.opacity = '1';
+    err.style.display = 'block';
+
+    if(e.name === 'NotAllowedError'){
+      err.innerHTML = '⚠ Permiso denegado.<br>Ve a Ajustes del navegador y permite la cámara para este sitio, luego recarga.';
+    } else if(e.name === 'NotFoundError'){
+      err.innerHTML = '⚠ No se encontró ninguna cámara en este dispositivo.';
+    } else if(e.name === 'NotReadableError'){
+      err.innerHTML = '⚠ La cámara está siendo usada por otra app. Ciérrala e intenta de nuevo.';
+    } else {
+      err.innerHTML = '⚠ Error: ' + e.message + '<br><small>Asegúrate de usar HTTPS o localhost.</small>';
+    }
   }
-  const sq = Math.sqrt(disc);
-  const r1 = (-b + sq)/(2*a);
-  const r2 = (-b - sq)/(2*a);
-  return {type:'two',
-    x1: Number.isInteger(r1)?r1:+r1.toFixed(3),
-    x2: Number.isInteger(r2)?r2:+r2.toFixed(3),
-    disc, sq:+sq.toFixed(3)
-  };
 }
 
-function formatRoots(sol){
-  if(sol.type==='complex') return '∅ (complejas)';
-  if(sol.type==='double')  return `x = ${sol.x1}`;
-  return `x₁ = ${sol.x1},  x₂ = ${sol.x2}`;
+// ══════════════════════════════════
+//  CANVAS AR
+// ══════════════════════════════════
+let canvas, ctx, W, H;
+let arLineas = [];
+let tiempo = 0;
+let animId  = null;
+
+function initAR(){
+  canvas = document.getElementById('ar');
+  redimensionar();
+  ctx = canvas.getContext('2d');
+  window.addEventListener('resize', redimensionar);
 }
 
-function wrongAnswers(a,b,c,correct){
-  const {x1,x2,type} = correct;
-  const options = new Set();
-  // Correct
-  options.add(JSON.stringify(correct));
-  const tries = [
-    solveQuadratic(a, -b, c),
-    solveQuadratic(a, b, -c),
-    solveQuadratic(-a, b, c),
-    solveQuadratic(a+1, b, c),
-    solveQuadratic(a, b+1, c),
+function redimensionar(){
+  if(!canvas) return;
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  ajustarEsquinas();
+}
+
+function ajustarEsquinas(){
+  const ph = document.getElementById('panel').offsetHeight || 0;
+  document.getElementById('bl').style.bottom = (ph+10)+'px';
+  document.getElementById('br').style.bottom = (ph+10)+'px';
+}
+
+// Construye las líneas que se dibujan sobre la cámara
+// SOLO muestra la ecuación — nada más
+function construirAR(a, b, c){
+  arLineas = [];
+  tiempo   = 0;
+
+  const bS = b===0?'':(b>0?` + ${b}x`:` − ${Math.abs(b)}x`);
+  const cS = c===0?'':(c>0?` + ${c}` :` − ${Math.abs(c)}`);
+  const eq = `${a}x²${bS}${cS} = 0`;
+
+  // Solo 3 líneas, limpias y separadas
+  arLineas = [
+    { texto: eq,                      color:'#ffffff', size:30, glow:true,  delay:0    },
+    { texto: '─────────────────────', color:'rgba(57,255,20,0.2)', size:10, glow:false, delay:0.2  },
+    { texto: `a=${a}   b=${b}   c=${c}`, color:'#aaffaa', size:16, glow:false, delay:0.35 },
   ];
-  for(const t of tries){
-    if(options.size>=3) break;
-    const k = JSON.stringify(t);
-    if(!options.has(k)) options.add(k);
-  }
-  // Ensure 3 distinct
-  let i=1;
-  while(options.size<3){
-    options.add(JSON.stringify({type:'two',x1:x1+i,x2:x2-i,disc:0,sq:0}));
-    i++;
-  }
-  return [...options].map(s=>JSON.parse(s));
 }
 
-function shuffle(arr){ return arr.sort(()=>Math.random()-0.5); }
+// Dibuja las líneas centradas en la zona de cámara (encima del panel)
+function dibujarAR(){
+  if(!ctx || !arLineas.length) return;
 
-function loadProblem(idx){
-  current = idx; answered = false;
-  const p = PROBLEMS[idx];
-  const sol = solveQuadratic(p.a, p.b, p.c);
+  const panelH = document.getElementById('panel').offsetHeight || 0;
+  const topH   = 46; // topbar
+  const areaH  = H - panelH - topH;
+  const cx     = W / 2;
 
-  // Equation display
-  document.getElementById('eq-display').innerHTML = p.desc.replace(/²/,'<sup>2</sup>');
-  document.getElementById('eq-coefs').innerHTML =
-    `<div class="coef-chip">a = <b>${p.a}</b></div>
-     <div class="coef-chip">b = <b>${p.b}</b></div>
-     <div class="coef-chip">c = <b>${p.c}</b></div>`;
+  const lineH  = areaH / (arLineas.length + 2);
+  const totalH = arLineas.length * lineH;
+  const startY = topH + (areaH - totalH) / 2 + lineH * 0.6;
 
-  // Options
-  const opts = shuffle(wrongAnswers(p.a,p.b,p.c,sol));
-  const correctIdx = opts.findIndex(o=>formatRoots(o)===formatRoots(sol));
+  arLineas.forEach((l, i) => {
+    if(tiempo < l.delay) return;
+    const age   = tiempo - l.delay;
+    const alpha = Math.min(1, age * 2.5);
+    const floatY= Math.sin(tiempo * 0.55 + i * 0.8) * 3;
+    const sy    = startY + i * lineH + floatY;
+    const fs    = l.size * (W / 400);
 
-  const labels = ['A','B','C'];
-  const wrap = document.getElementById('answers-wrap');
-  wrap.innerHTML = '';
-  opts.forEach((opt,i)=>{
-    const btn = document.createElement('button');
-    btn.className = 'ans-btn';
-    const isCorrect = (i === correctIdx);
-    btn.dataset.correct = isCorrect;
-    btn.innerHTML =
-      `<span class="opt-label">${labels[i]}</span>
-       <span>${formatRoots(opt)}</span>`;
-    btn.onclick = ()=> handleAnswer(btn, isCorrect, sol, p);
-    wrap.appendChild(btn);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = `bold ${fs}px Orbitron, monospace`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+
+    if(l.glow){
+      // sombra negra para legibilidad sobre cualquier fondo de cámara
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur  = 0;
+      ctx.fillStyle   = 'rgba(0,0,0,0.6)';
+      // fondo semitransparente detrás del texto
+      const metrics = ctx.measureText(l.texto);
+      const pw = metrics.width + 28;
+      const ph2 = fs * 1.3;
+      ctx.beginPath();
+      ctx.roundRect(cx - pw/2, sy - ph2/2, pw, ph2, 8);
+      ctx.fill();
+
+      ctx.shadowColor = l.color;
+      ctx.shadowBlur  = 16;
+    }
+
+    ctx.fillStyle = l.color;
+    ctx.fillText(l.texto, cx, sy);
+    ctx.restore();
+  });
+}
+
+function loop(){
+  animId = requestAnimationFrame(loop);
+  tiempo += 0.016;
+  if(!ctx) return;
+  ctx.clearRect(0, 0, W, H);
+  dibujarAR();
+}
+
+// ══════════════════════════════════
+//  RESOLVER
+// ══════════════════════════════════
+function resolver(){
+  const a = parseFloat(document.getElementById('ia').value) || 1;
+  const b = parseFloat(document.getElementById('ib').value) || 0;
+  const c = parseFloat(document.getElementById('ic').value) || 0;
+
+  if(a === 0){
+    document.getElementById('pasos-out').innerHTML =
+      '<div class="paso"><div class="pbody"><span class="r">⚠ "a" no puede ser 0</span></div></div>';
+    document.getElementById('result-out').innerHTML = '';
+    return;
+  }
+
+  // Etiqueta de ecuación en el tab
+  const bL = b>=0?`+ ${b}x`:`− ${Math.abs(b)}x`;
+  const cL = c>=0?`+ ${c}` :`− ${Math.abs(c)}`;
+  document.getElementById('eqlabel').textContent = `${a}x² ${bL} ${cL} = 0`;
+
+  const D   = b*b - 4*a*c;
+  const sqD = D >= 0 ? Math.sqrt(D) : null;
+
+  // ─── PASOS ─────────────────────
+  const pasos = [];
+
+  pasos.push({
+    tit:'PASO 1 — Identificar coeficientes',
+    body:`Forma: <span class="w">ax² + bx + c = 0</span><br>
+          <span class="g">a = ${a}</span> &nbsp;|&nbsp;
+          <span class="c">b = ${b}</span> &nbsp;|&nbsp;
+          <span class="o">c = ${c}</span>`
   });
 
-  // Hide solution
-  const sp = document.getElementById('solution-panel');
-  sp.className = '';
-  sp.innerHTML = '';
-  sp.style.display = 'none';
-}
+  pasos.push({
+    tit:'PASO 2 — Discriminante (Δ = b² − 4ac)',
+    body:`Δ = <span class="c">(${b})²</span> − 4·<span class="g">${a}</span>·<span class="o">${c}</span><br>
+          Δ = <span class="w">${b*b}</span> − <span class="w">${4*a*c}</span><br>
+          Δ = <span class="${D>0?'g':D===0?'gd':'r'}">${D}</span>
+          &nbsp;${D>0?'→ 2 raíces reales':D===0?'→ Raíz doble':'→ Sin raíces reales'}`
+  });
 
-let errorTimer = null;
-function showError(){
-  const ov = document.getElementById('error-overlay');
-  ov.classList.add('show');
-  clearTimeout(errorTimer);
-  errorTimer = setTimeout(()=>ov.classList.remove('show'), 1800);
-}
+  pasos.push({
+    tit:'PASO 3 — Fórmula cuadrática',
+    body:`<span class="w">x = (−b ± √Δ) / 2a</span><br>
+          x = (−<span class="c">${b}</span> ± √<span class="${D>0?'g':D===0?'gd':'r'}">${D}</span>) / 2·<span class="g">${a}</span><br>
+          x = (<span class="w">${-b}</span> ± <span class="w">${D>=0?sqD.toFixed(4):'i·'+Math.sqrt(-D).toFixed(4)}</span>) / <span class="w">${2*a}</span>`
+  });
 
-function handleAnswer(btn, isCorrect, sol, p){
-  if(answered) return;
-  answered = true;
-  const allBtns = document.querySelectorAll('.ans-btn');
-  allBtns.forEach(b=>b.disabled=true);
+  let resHTML='', resClass='';
 
-  if(isCorrect){
-    btn.classList.add('correct');
-    score += 10;
-    updateScore();
-    showSolution(sol, p);
+  if(D > 0){
+    const x1 = (-b+sqD)/(2*a);
+    const x2 = (-b-sqD)/(2*a);
+    pasos.push({
+      tit:'PASO 4 — Calcular raíces',
+      body:`<span class="c">x₁</span> = (${-b}+${sqD.toFixed(4)}) / ${2*a} = <span class="c">${x1.toFixed(6)}</span><br>
+            <span class="o">x₂</span> = (${-b}−${sqD.toFixed(4)}) / ${2*a} = <span class="o">${x2.toFixed(6)}</span>`
+    });
+    pasos.push({
+      tit:'VERIFICACIÓN',
+      body:`x₁: resultado ≈ <span class="g">${(a*x1*x1+b*x1+c).toFixed(5)} ✔</span><br>
+            x₂: resultado ≈ <span class="g">${(a*x2*x2+b*x2+c).toFixed(5)} ✔</span>`
+    });
+    resClass='dos';
+    resHTML=`<div class="reslbl">✔ DOS RAÍCES REALES</div>
+      <div class="roots">
+        <div class="rbox"><div class="rn">x₁</div><div class="rv rx1">${x1.toFixed(4)}</div></div>
+        <div class="rbox"><div class="rn">x₂</div><div class="rv rx2">${x2.toFixed(4)}</div></div>
+      </div>`;
+
+  } else if(D === 0){
+    const x1 = -b/(2*a);
+    pasos.push({
+      tit:'PASO 4 — Raíz doble',
+      body:`x = ${-b} / ${2*a} = <span class="gd">${x1.toFixed(6)}</span>`
+    });
+    resClass='uno';
+    resHTML=`<div class="reslbl">★ RAÍZ DOBLE</div>
+      <div class="roots">
+        <div class="rbox"><div class="rn">x₁=x₂</div><div class="rv rxd">${x1.toFixed(4)}</div></div>
+      </div>`;
+
   } else {
-    btn.classList.add('wrong');
-    answered = false; // allow retry
-    allBtns.forEach(b=>b.disabled=false);
-    showError();
-    // Mark correct one
-    allBtns.forEach(b=>{ if(b.dataset.correct==='true') b.style.borderColor='rgba(0,245,196,0.3)'; });
+    const re = -b/(2*a);
+    const im = Math.sqrt(-D)/(2*a);
+    pasos.push({
+      tit:'PASO 4 — Raíces complejas',
+      body:`<span class="c">x₁</span> = ${re.toFixed(4)} + ${im.toFixed(4)}i<br>
+            <span class="o">x₂</span> = ${re.toFixed(4)} − ${im.toFixed(4)}i`
+    });
+    resClass='no';
+    resHTML=`<div class="reslbl">✘ SIN RAÍCES REALES (Δ&lt;0)</div>
+      <div class="roots">
+        <div class="rbox"><div class="rn">x₁</div><div class="rv rxc">${re.toFixed(3)}+${im.toFixed(3)}i</div></div>
+        <div class="rbox"><div class="rn">x₂</div><div class="rv rxc">${re.toFixed(3)}−${im.toFixed(3)}i</div></div>
+      </div>`;
   }
+
+  // renderizar
+  document.getElementById('pasos-out').innerHTML =
+    pasos.map(p=>`<div class="paso"><div class="ptit">${p.tit}</div><div class="pbody">${p.body}</div></div>`).join('');
+  document.getElementById('result-out').innerHTML =
+    `<div class="resbox ${resClass}">${resHTML}</div>`;
+
+  // actualizar AR (solo la ecuación en cámara)
+  construirAR(a, b, c);
+
+  // ir a resolución automáticamente
+  tab(1);
 }
 
-function updateScore(){
-  document.getElementById('score-txt').textContent = score+' pts';
-  const pct = Math.min((score / (PROBLEMS.length*10))*100,100);
-  document.getElementById('progress-fill').style.width = pct+'%';
+function aleatorio(){
+  const sg=[-1,1];
+  document.getElementById('ia').value=sg[Math.random()<.5?0:1]*(1+Math.floor(Math.random()*4));
+  document.getElementById('ib').value=Math.round(Math.random()*14-7);
+  document.getElementById('ic').value=Math.round(Math.random()*12-6);
+  resolver();
 }
 
-function buildSteps(a,b,c,sol){
-  const disc = sol.disc;
-  const s = String;
-  return `
-  <div class="sol-step">
-    <span class="step-num">1.</span> Identificar coeficientes<br>
-    <span class="formula">a = ${a},  b = ${b},  c = ${c}</span>
-  </div>
-  <div class="sol-step">
-    <span class="step-num">2.</span> Fórmula general
-    <span class="formula">x = (−b ± √(b²−4ac)) / 2a</span>
-  </div>
-  <div class="sol-step">
-    <span class="step-num">3.</span> Calcular discriminante
-    <span class="formula">Δ = (${b})² − 4·(${a})·(${c}) = ${b*b} − ${4*a*c} = <span class="highlight">${disc}</span></span>
-    ${disc>0?'<br>Δ > 0 → dos raíces reales distintas':disc===0?'<br>Δ = 0 → raíz doble':'<br>Δ < 0 → raíces complejas'}
-  </div>
-  ${disc>=0?`<div class="sol-step">
-    <span class="step-num">4.</span> Calcular raíces
-    <span class="formula">x = (−(${b}) ± √${disc}) / (2·${a})</span>
-    <span class="formula">x = (${-b} ± ${sol.sq||0}) / ${2*a}</span>
-  </div>`:''}
-  <div class="sol-result">
-    <div style="font-size:11px;font-family:'Space Mono',monospace;color:var(--muted);margin-bottom:6px;letter-spacing:1px;">SOLUCIÓN</div>
-    <div class="roots">${formatRoots(sol).replace(/x₁/,'<span>x₁</span>').replace(/x₂/,'<span>x₂</span>').replace(/x =/,'<span>x</span> =')}</div>
-  </div>`;
-}
+['ia','ib','ic'].forEach(id=>document.getElementById(id).addEventListener('change',resolver));
 
-function showSolution(sol, p){
-  const sp = document.getElementById('solution-panel');
-  sp.innerHTML = `
-    <div class="sol-header">
-      <div class="sol-icon">✓</div>
-      <div class="sol-title">Resolución paso a paso</div>
-    </div>
-    ${buildSteps(p.a, p.b, p.c, sol)}
-    <button class="btn-next" onclick="nextProblem()">Siguiente ejercicio →</button>`;
-  sp.style.display = 'block';
-  sp.classList.add('show');
-  setTimeout(()=>sp.scrollIntoView({behavior:'smooth',block:'nearest'}), 100);
-}
-
-function nextProblem(){
-  const next = (current+1) % PROBLEMS.length;
-  // Update picker
-  document.querySelectorAll('.prob-btn').forEach((b,i)=>b.classList.toggle('active',i===next));
-  loadProblem(next);
-  window.scrollTo({top:0,behavior:'smooth'});
-}
-
-// Build picker
-const picker = document.getElementById('problem-picker');
-PROBLEMS.forEach((p,i)=>{
-  const b = document.createElement('button');
-  b.className = 'prob-btn'+(i===0?' active':'');
-  b.textContent = p.label;
-  b.onclick = ()=>{
-    document.querySelectorAll('.prob-btn').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    loadProblem(i);
-  };
-  picker.appendChild(b);
-});
-
-// Camera
-async function startCamera(){
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
-    const video = document.getElementById('video');
-    video.srcObject = stream;
-    video.style.display = 'block';
-    document.getElementById('cam-inactive').style.display = 'none';
-    document.getElementById('cam-overlay').style.display = 'flex';
-  } catch(e){
-    alert('No se pudo acceder a la cámara. Asegúrate de dar permisos.');
-  }
-}
-
-// Init
-loadProblem(0);
+// ajustar esquinas al cargar
+window.addEventListener('load', ajustarEsquinas);
 </script>
 </body>
 </html>
