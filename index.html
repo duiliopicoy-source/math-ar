@@ -301,81 +301,87 @@
 </head>
 <body>
 
-<!-- ─── Componente canvas-text: fallback robusto para Android/HyperOS ─── -->
-<!-- Dibuja la ecuación en un <canvas> 2D y la aplica como textura a un plano 3D.
-     Evita la carga de fuentes .fnt y el shader msdf que fallan en WebGL de Redmi. -->
+<!-- ══════════════════════════════════════════════════════════════
+     COMPONENTE canvas-text
+     Dibuja la ecuación en un <canvas> 2D → textura sobre PlaneGeometry.
+     No carga fuentes externas .fnt → funciona siempre en Android/HyperOS.
+     ══════════════════════════════════════════════════════════════ -->
 <script>
 AFRAME.registerComponent('canvas-text', {
   schema: {
-    value:     { type: 'string', default: '' },
-    color:     { type: 'color',  default: '#00FF00' },
-    bgColor:   { type: 'color',  default: 'transparent' },
-    fontSize:  { type: 'int',    default: 96 },
-    width:     { type: 'int',    default: 1024 },
-    height:    { type: 'int',    default: 256 }
+    value:    { type: 'string', default: '' },
+    color:    { type: 'color',  default: '#00FF00' },
+    fontSize: { type: 'int',    default: 112 },
+    cw:       { type: 'int',    default: 1024 },
+    ch:       { type: 'int',    default: 256  }
   },
   init() {
     this.canvas  = document.createElement('canvas');
     this.ctx     = this.canvas.getContext('2d');
     this.texture = new THREE.CanvasTexture(this.canvas);
-    const mat    = new THREE.MeshBasicMaterial({
+    const mat = new THREE.MeshBasicMaterial({  /* shader: flat equivalente */
       map: this.texture,
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide
     });
-    const geo  = new THREE.PlaneGeometry(1, 1);
-    this.mesh  = new THREE.Mesh(geo, mat);
-    this.el.setObject3D('canvas-text-mesh', this.mesh);
+    /* Relación de aspecto 4:1 → coincide con cw/ch = 1024/256 */
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), mat);
+    this.el.setObject3D('mesh', this.mesh);
     this.update();
   },
-  update() {
-    const d = this.data;
-    this.canvas.width  = d.width;
-    this.canvas.height = d.height;
-    const ctx = this.ctx;
-    ctx.clearRect(0, 0, d.width, d.height);
 
-    // Fondo semitransparente
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    const r = 32;
+  update() {
+    const { value, color, fontSize, cw, ch } = this.data;
+    const cvs = this.canvas, ctx = this.ctx;
+    cvs.width = cw; cvs.height = ch;
+    ctx.clearRect(0, 0, cw, ch);
+
+    /* ── Fondo con esquinas redondeadas ── */
+    const r = 36;
+    ctx.fillStyle = 'rgba(0,0,0,0.60)';
     ctx.beginPath();
-    ctx.moveTo(r,0); ctx.lineTo(d.width-r,0);
-    ctx.quadraticCurveTo(d.width,0,d.width,r);
-    ctx.lineTo(d.width,d.height-r);
-    ctx.quadraticCurveTo(d.width,d.height,d.width-r,d.height);
-    ctx.lineTo(r,d.height);
-    ctx.quadraticCurveTo(0,d.height,0,d.height-r);
-    ctx.lineTo(0,r);
-    ctx.quadraticCurveTo(0,0,r,0);
+    ctx.moveTo(r, 0); ctx.lineTo(cw-r, 0);
+    ctx.quadraticCurveTo(cw,  0,  cw,  r);
+    ctx.lineTo(cw, ch-r);
+    ctx.quadraticCurveTo(cw, ch, cw-r, ch);
+    ctx.lineTo(r,  ch);
+    ctx.quadraticCurveTo(0,  ch, 0,   ch-r);
+    ctx.lineTo(0,  r);
+    ctx.quadraticCurveTo(0,  0,  r,   0);
     ctx.closePath();
     ctx.fill();
 
-    // Borde neón
-    ctx.strokeStyle = d.color;
-    ctx.lineWidth   = 6;
-    ctx.shadowColor = d.color;
-    ctx.shadowBlur  = 28;
+    /* ── Borde neón ── */
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 7;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 32;
     ctx.stroke();
 
-    // Texto
-    ctx.shadowBlur  = 22;
-    ctx.shadowColor = d.color;
-    ctx.fillStyle   = d.color;
-    ctx.font        = `bold ${d.fontSize}px monospace`;
-    ctx.textAlign   = 'center';
+    /* ── Texto centrado, con glow ── */
+    ctx.font         = `bold ${fontSize}px monospace`;
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(d.value, d.width / 2, d.height / 2);
+    ctx.shadowBlur   = 28;
+    ctx.shadowColor  = color;
+    ctx.fillStyle    = color;
+    ctx.fillText(value, cw / 2, ch / 2);
 
     this.texture.needsUpdate = true;
   },
-  remove() {
-    this.el.removeObject3D('canvas-text-mesh');
-  }
+
+  remove() { this.el.removeObject3D('mesh'); }
 });
 </script>
 
-<!-- ─── Escena A-Frame con alpha:true y sin logarithmicDepthBuffer ─── -->
+<!-- ══════════════════════════════════════════════════════════════
+     ESCENA A-FRAME
+     • embedded           → UI HTML superpuesta sin conflicto
+     • alpha: true        → cámara transparente (sin fondo negro)
+     • antialias: true    → bordes suaves
+     • SIN logarithmicDepthBuffer → evita pantalla negra en HyperOS/Redmi
+     ══════════════════════════════════════════════════════════════ -->
 <a-scene
   embedded
   arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
@@ -383,37 +389,40 @@ AFRAME.registerComponent('canvas-text', {
   vr-mode-ui="enabled: false"
   loading-screen="enabled: false"
 >
-  <!-- Marcador Hiro -->
+  <!-- ── Marcador Hiro ─────────────────────────────────────────
+       Todo lo que esté DENTRO de <a-marker> se ancla al marcador.
+       Al perder el marcador de vista desaparece automáticamente.
+       ─────────────────────────────────────────────────────────── -->
   <a-marker preset="hiro" id="hiro-marker">
 
     <!--
-      ARREGLO 1 — Posición: flotando claramente encima del marcador (Y=1.25)
-      ARREGLO 2 — Color verde neón puro #00FF00; shader:flat vía MeshBasicMaterial en canvas-text
-      ARREGLO 3 — Dentro de <a-marker> → anclado al marcador Hiro ✓
-      ARREGLO 4 — canvas-text en lugar de <a-text>: no depende de fuentes .fnt externas
-      scale="2 2 2" → texto grande y visible desde distancia normal de cámara
+      position="0 0.5 0"   → flota 0.5 u sobre el marcador (cámara cenital/mesa)
+      rotation="-90 0 0"   → el plano mira hacia arriba = se ve "parado" frente a cámara
+      scale="4 4 4"        → tamaño impactante, ecuación grande como en la imagen de referencia
+      color: #00FF00       → verde neón puro
+      MeshBasicMaterial    → shader flat, brilla sin depender de luces
     -->
     <a-entity
       id="eq-text"
-      canvas-text="value: 5x + 6 = 10; color: #00FF00; fontSize: 96; width: 1024; height: 256"
-      position="0 1.25 0"
+      canvas-text="value: 5x + 6 = 10; color: #00FF00; fontSize: 112; cw: 1024; ch: 256"
+      position="0 0.5 0"
       rotation="-90 0 0"
-      scale="2 2 2"
+      scale="4 4 4"
     ></a-entity>
 
-    <!-- Plataforma neón bajo la ecuación -->
+    <!-- Plataforma neón (base decorativa bajo el texto) -->
     <a-box
       position="0 0.01 0"
-      width="4" height="0.04" depth="1.4"
+      width="5" height="0.04" depth="1.6"
       color="#001a0d"
-      opacity="0.88"
+      opacity="0.82"
       material="shader: flat;"
     ></a-box>
     <a-box
-      position="0 0.02 0"
-      width="4.15" height="0.02" depth="1.5"
+      position="0 0.025 0"
+      width="5.2" height="0.02" depth="1.7"
       color="#00FF00"
-      opacity="0.22"
+      opacity="0.20"
       material="shader: flat;"
     ></a-box>
 
@@ -592,7 +601,17 @@ function loadQuestion() {
 
   // 3D text — actualiza el componente canvas-text
   const eqEntity = document.querySelector('#eq-text');
-  eqEntity.setAttribute('canvas-text', 'value', current.eqText);
+  // Espera al componente si es la primera carga, luego actualiza
+  if (eqEntity.components && eqEntity.components['canvas-text']) {
+    eqEntity.setAttribute('canvas-text', 'value', current.eqText);
+  } else {
+    eqEntity.addEventListener('componentinitialized', function onCT(e) {
+      if (e.detail.name === 'canvas-text') {
+        eqEntity.setAttribute('canvas-text', 'value', current.eqText);
+        eqEntity.removeEventListener('componentinitialized', onCT);
+      }
+    });
+  }
 
   // Botones
   const btns = document.querySelectorAll('.opt-btn');
