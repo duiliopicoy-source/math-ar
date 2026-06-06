@@ -57,7 +57,7 @@
             50% { opacity: 0; }
         }
 
-        /* Botón de desencriptar al estilo Cyberpunk */
+        /* Botón estilo Cyberpunk */
         #decrypt-btn {
             background: transparent;
             border: 2px solid #ff4d6d;
@@ -91,46 +91,65 @@
             width: 100vw;
             height: 100vh;
             pointer-events: none;
-            display: none; /* Se activa por JS */
+            display: none;
         }
 
-        /* Cada uno de los "I Love You" individuales */
+        /* Cada "Love you" individual */
         .heart-text {
             position: absolute;
             color: #ff4d6d;
-            font-size: 12px;
             font-weight: bold;
             white-space: nowrap;
             opacity: 0;
-            transform: translate(-50%, -50%) scale(0.5);
-            animation: appear 2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-            text-shadow: 0 0 8px rgba(255, 77, 109, 0.6);
+            transform: translate(-50%, -50%);
+            /* Primera animación: aparecer. Segunda animación: movimiento infinito */
+            animation: appear 1.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
+                       floatMovement 4s ease-in-out infinite alternate;
+            text-shadow: 0 0 8px rgba(255, 77, 109, 0.4);
         }
 
+        /* Animación de entrada */
         @keyframes appear {
             0% {
                 opacity: 0;
-                transform: translate(-50%, -50%) scale(0.3);
-            }
-            50% {
-                opacity: 0.8;
+                transform: translate(-50%, -50%) scale(0.2);
             }
             100% {
-                opacity: 0.9;
+                opacity: 0.85;
                 transform: translate(-50%, -50%) scale(1);
             }
         }
 
-        /* Texto flotante central grande */
+        /* Animación de movimiento constante (Efecto flotante y latido) */
+        @keyframes floatMovement {
+            0% {
+                margin-top: 0px;
+                margin-left: 0px;
+                filter: brightness(1);
+            }
+            50% {
+                margin-top: var(--move-y, 8px);
+                margin-left: var(--move-x, -5px);
+                filter: brightness(1.2); /* Sutil parpadeo de luz */
+            }
+            100% {
+                margin-top: var(--move-y-end, -6px);
+                margin-left: var(--move-x-end, 6px);
+                filter: brightness(0.9);
+            }
+        }
+
+        /* Texto flotante central principal */
         #main-title {
             position: absolute;
             color: #ffffff;
-            font-size: 3rem;
+            font-size: 3.5rem;
             font-weight: 900;
             text-align: center;
             z-index: 5;
-            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            text-shadow: 0 0 25px rgba(255, 255, 255, 0.6);
             opacity: 0;
+            display: none;
             transition: opacity 2s ease-in-out;
             pointer-events: none;
         }
@@ -145,7 +164,6 @@
     </div>
 
     <h1 id="main-title">Love you.</h1>
-
     <div id="heart-container"></div>
 
     <script>
@@ -154,88 +172,99 @@
         const heartContainer = document.getElementById('heart-container');
         const mainTitle = document.getElementById('main-title');
 
-        // Configuración del algoritmo matemático del corazón
-        const TOTAL_TEXTS = 320; // Cantidad de "I Love You" que forman la silueta
+        // Subimos la cantidad a 550 para rellenar perfectamente el fondo y el centro
+        const TOTAL_TEXTS = 550; 
         const TEXT_PHRASE = "I love you";
 
         decryptBtn.addEventListener('click', () => {
-            // 1. Desvanecer la pantalla de carga de la consola
             terminalScreen.style.opacity = '0';
             terminalScreen.style.transform = 'scale(0.9)';
             
             setTimeout(() => {
                 terminalScreen.style.display = 'none';
-                // 2. Mostrar el contenedor del corazón y el título principal
                 heartContainer.style.display = 'block';
-                mainTitle.style.style = 'block';
-                mainTitle.style.opacity = '1';
+                mainTitle.style.display = 'block';
+                // Pequeño timeout para activar la transición de opacidad suave
+                setTimeout(() => mainTitle.style.opacity = '1', 50);
                 
-                // 3. Generar la dispersión geométrica
-                generateHeart();
+                generateDenseHeart();
             }, 800);
         });
 
-        function generateHeart() {
+        function generateDenseHeart() {
             const width = window.innerWidth;
             const height = window.innerHeight;
-            
-            // Centros de coordenadas en pantalla
             const centerX = width / 2;
-            const centerY = height / 2 - 30; // Un poco desplazado hacia arriba para equilibrar el diseño
+            const centerY = height / 2 - 20;
 
-            // Escala del corazón según el tamaño de la pantalla
-            const scale = Math.min(width, height) * 0.022; 
+            // Factor de escala base
+            const baseScale = Math.min(width, height) * 0.022; 
 
             for (let i = 0; i < TOTAL_TEXTS; i++) {
-                // Generamos un ángulo aleatorio t entre 0 y 2*PI
-                // Usamos una distribución uniforme estructurada para rellenar la forma de manera balanceada
                 const t = Math.PI * 2 * (i / TOTAL_TEXTS); 
                 
-                // --- ECUACIÓN MATEMÁTICA DEL CORAZÓN (Cardioide paramétrica) ---
-                // x = 16 * sin^3(t)
-                // y = 13 * cos(t) - 5 * cos(2t) - 2 * cos(3t) - cos(4t)
+                // Coordenadas de la silueta exterior original
                 const xMod = 16 * Math.pow(Math.sin(t), 3);
                 const yMod = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
 
-                // Traducimos a coordenadas de píxeles en pantalla (Y se invierte debido a la matriz del navegador)
-                const posX = centerX + xMod * scale;
-                const posY = centerY - yMod * scale;
+                // TRUCO DE RELLENO: 
+                // Multiplicamos la escala por un factor aleatorio 'r' entre 0.0 y 1.0.
+                // Esto hace que los textos no se queden solo en el borde, sino que se esparzan hacia el centro.
+                // Usamos Math.sqrt(Math.random()) para que haya una transición fluida y no se amontone todo en el centro exacto.
+                const r = Math.sqrt(Math.random()); 
+                const currentScale = baseScale * r;
 
-                // Crear el elemento HTML
+                // Calculamos la posición final con su respectiva escala de reducción interna
+                const posX = centerX + xMod * currentScale;
+                const posY = centerY - yMod * currentScale;
+
+                // Crear elemento
                 const wordElement = document.createElement('span');
                 wordElement.className = 'heart-text';
                 wordElement.innerText = TEXT_PHRASE;
 
-                // Posicionamiento absoluto
-                wordElement.style.left = `${posX}px`;
-                wordElement.style.top = `${posY}px`;
+                // Añadir un desfase orgánico leve para romper la rigidez matemática pura
+                const jitter = 12; 
+                const finalX = posX + (Math.random() - 0.5) * jitter;
+                const finalY = posY + (Math.random() - 0.5) * jitter;
 
-                // Añadimos pequeñas variaciones aleatorias para que se vea más orgánico e imperfecto (como el vídeo)
-                const randomDelay = Math.random() * 1.5; // Los textos irán apareciendo en tiempos distintos
-                const randomOffset = (Math.random() - 0.5) * 15; // Pequeño desfase en PX
-                
-                wordElement.style.animationDelay = `${randomDelay}s`;
-                wordElement.style.left = `${posX + randomOffset}px`;
-                wordElement.style.top = `${posY + randomOffset}px`;
+                wordElement.style.left = `${finalX}px`;
+                wordElement.style.top = `${finalY}px`;
 
-                // Ajustamos tamaños aleatorios para dar sensación de profundidad tridimensional
-                const fontSize = Math.floor(Math.random() * 6) + 10; // Entre 10px y 16px
+                // Tiempos de aparición aleatorios para el efecto de cascada del video
+                const randomDelay = Math.random() * 2.2; 
+                wordElement.style.animationDelay = `${randomDelay}s, ${randomDelay}s`;
+
+                // VARIABLES DINÁMICAS CSS: Le damos a cada texto direcciones de movimiento únicas
+                // Así cada palabra flota de forma independiente hacia un lado diferente
+                const moveX = ((Math.random() - 0.5) * 20).toFixed(1);
+                const moveY = ((Math.random() - 0.5) * 20).toFixed(1);
+                const moveXEnd = ((Math.random() - 0.5) * 20).toFixed(1);
+                const moveYEnd = ((Math.random() - 0.5) * 20).toFixed(1);
+
+                wordElement.style.setProperty('--move-x', `${moveX}px`);
+                wordElement.style.setProperty('--move-y', `${moveY}px`);
+                wordElement.style.setProperty('--move-x-end', `${moveXEnd}px`);
+                wordElement.style.setProperty('--move-y-end', `${moveYEnd}px`);
+
+                // Tamaño de letra: Textos más pequeños en el fondo/centro y grandes en los bordes (Efecto 3D)
+                // Si 'r' es cercano a 0 (centro), la letra es más chica. Si 'r' es cercano a 1 (borde), es más grande.
+                const fontSize = Math.floor(10 + (r * 6) + (Math.random() * 3));
                 wordElement.style.fontSize = `${fontSize}px`;
 
-                // Variaciones sutiles de color (Rojos, carmines, rosas fosforescentes)
-                const colors = ['#ff4d6d', '#ff758f', '#ff8fa3', '#c9184a', '#ff0a54'];
+                // Colores degradados aleatorios dentro de la gama de rojos/rosas neón
+                const colors = ['#ff4d6d', '#ff758f', '#ff8fa3', '#c9184a', '#ff0a54', '#ffccd5'];
                 wordElement.style.color = colors[Math.floor(Math.random() * colors.length)];
 
-                // Insertamos en el DOM
                 heartContainer.appendChild(wordElement);
             }
         }
 
-        // Reajustar el diseño si se redimensiona la pantalla
+        // Recalcular si cambian el tamaño de la ventana (pantalla dividida o rotación de celular)
         window.addEventListener('resize', () => {
             if(heartContainer.style.display === 'block') {
                 heartContainer.innerHTML = '';
-                generateHeart();
+                generateDenseHeart();
             }
         });
     </script>
