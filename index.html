@@ -94,68 +94,42 @@
             display: none;
         }
 
-        /* Estilo general para todos los textos flotantes */
+        /* Estilo sutil para los nombres flotantes */
         .heart-text {
             position: absolute;
             font-weight: bold;
             white-space: nowrap;
             opacity: 0;
             transform: translate(-50%, -50%);
-            animation: appear 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
-                       floatMovement 3.5s ease-in-out infinite alternate;
+            /* Animación suave de aparición y flotación lenta */
+            animation: appear 1.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
+                       slowFloat 5s ease-in-out infinite alternate;
+            text-shadow: 0 0 8px rgba(255, 77, 109, 0.5);
         }
 
-        /* Variación para resaltar los "Ariana" en el centro */
-        .center-fill {
-            text-shadow: 0 0 6px rgba(255, 20, 147, 0.5);
-        }
-
-        /* Variación para el borde "I love you" */
-        .border-edge {
-            text-shadow: 0 0 10px rgba(255, 77, 109, 0.6);
-        }
-
-        /* Animación de entrada */
+        /* Animación de entrada con escala elegante */
         @keyframes appear {
             0% {
                 opacity: 0;
-                transform: translate(-50%, -50%) scale(0.1);
+                transform: translate(-50%, -50%) scale(0.3);
             }
             100% {
-                opacity: 0.9;
+                opacity: 0.85;
                 transform: translate(-50%, -50%) scale(1);
             }
         }
 
-        /* Animación de movimiento flotante e independiente */
-        @keyframes floatMovement {
+        /* Flotación sutil e independiente */
+        @keyframes slowFloat {
             0% {
                 transform: translate(-50%, -50%) translate(0px, 0px);
-                filter: brightness(1);
             }
             50% {
                 transform: translate(-50%, -50%) translate(var(--move-x), var(--move-y));
-                filter: brightness(1.3);
             }
             100% {
                 transform: translate(-50%, -50%) translate(var(--move-x-end), var(--move-y-end));
-                filter: brightness(0.9);
             }
-        }
-
-        /* Texto flotante central principal */
-        #main-title {
-            position: absolute;
-            color: #ffffff;
-            font-size: 3.8rem;
-            font-weight: 900;
-            text-align: center;
-            z-index: 5;
-            text-shadow: 0 0 30px rgba(255, 255, 255, 0.8);
-            opacity: 0;
-            display: none;
-            transition: opacity 2s ease-in-out;
-            pointer-events: none;
         }
     </style>
 </head>
@@ -167,18 +141,18 @@
         <button id="decrypt-btn">🔓 Decrypt Message</button>
     </div>
 
-    <h1 id="main-title">Love you.</h1>
     <div id="heart-container"></div>
 
     <script>
         const decryptBtn = document.getElementById('decrypt-btn');
         const terminalScreen = document.getElementById('terminal-screen');
         const heartContainer = document.getElementById('heart-container');
-        const mainTitle = document.getElementById('main-title');
 
-        // Ajustamos la densidad de elementos
-        const BORDER_COUNT = 250; // Cantidad de "I love you" en la silueta externa
-        const FILL_COUNT = 450;   // Cantidad de "Ariana" que van a saturar el interior
+        // CANTIDAD REDUCIDA: Pocas palabras para evitar que se amontone todo
+        const BORDER_COUNT = 90; // Silueta exterior fina
+        const FILL_COUNT = 70;   // Interior espaciado y elegante
+
+        const NAME_TEXT = "Ariana";
 
         decryptBtn.addEventListener('click', () => {
             terminalScreen.style.opacity = '0';
@@ -187,111 +161,90 @@
             setTimeout(() => {
                 terminalScreen.style.display = 'none';
                 heartContainer.style.display = 'block';
-                mainTitle.style.display = 'block';
-                setTimeout(() => mainTitle.style.opacity = '1', 50);
-                
-                generateCustomHeart();
+                generateMinimalHeart();
             }, 800);
         });
 
-        // Ecuación paramétrica base para determinar la forma
+        // Fórmula matemática base del corazón
         function getHeartCoords(t) {
             const x = 16 * Math.pow(Math.sin(t), 3);
             const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
             return { x, y };
         }
 
-        function createFloatingText(text, posX, posY, isCenter, scaleFactor) {
+        function createFloatingText(posX, posY, scaleFactor) {
             const wordElement = document.createElement('span');
-            wordElement.className = isCenter ? 'heart-text center-fill' : 'heart-text border-edge';
-            wordElement.innerText = text;
+            wordElement.className = 'heart-text';
+            wordElement.innerText = NAME_TEXT;
 
-            // Añadir una ligera imperfección de dispersión (jitter)
-            const jitter = isCenter ? 25 : 8; 
-            const finalX = posX + (Math.random() - 0.5) * jitter;
-            const finalY = posY + (Math.random() - 0.5) * jitter;
+            // Posicionamiento
+            wordElement.style.left = `${posX}px`;
+            wordElement.style.top = `${posY}px`;
 
-            wordElement.style.left = `${finalX}px`;
-            wordElement.style.top = `${finalY}px`;
-
-            // Tiempos de retraso aleatorios para el efecto de cascada progresiva
-            const randomDelay = Math.random() * 2.5; 
+            // Aparición escalonada para que no salgan todas al mismo tiempo
+            const randomDelay = Math.random() * 3; 
             wordElement.style.animationDelay = `${randomDelay}s, ${randomDelay}s`;
 
-            // Configurar direcciones de movimiento aleatorias en CSS (Movimiento continuo)
-            const mx = ((Math.random() - 0.5) * 24).toFixed(1);
-            const my = ((Math.random() - 0.5) * 24).toFixed(1);
-            const mxEnd = ((Math.random() - 0.5) * -24).toFixed(1);
-            const myEnd = ((Math.random() - 0.5) * -24).toFixed(1);
+            // Movimientos suaves y fluidos (desplazamientos cortos de máximo 15px)
+            const mx = ((Math.random() - 0.5) * 15).toFixed(1);
+            const my = ((Math.random() - 0.5) * 15).toFixed(1);
+            const mxEnd = ((Math.random() - 0.5) * -15).toFixed(1);
+            const myEnd = ((Math.random() - 0.5) * -15).toFixed(1);
 
             wordElement.style.setProperty('--move-x', `${mx}px`);
             wordElement.style.setProperty('--move-y', `${my}px`);
             wordElement.style.setProperty('--move-x-end', `${mxEnd}px`);
             wordElement.style.setProperty('--move-y-end', `${myEnd}px`);
 
-            // Escala de tamaños de fuente
-            let fontSize;
-            if (isCenter) {
-                // "Ariana" varía dinámicamente de tamaño para rellenar huecos vacíos
-                fontSize = Math.floor(11 + (scaleFactor * 5) + (Math.random() * 4));
-            } else {
-                // "I love you" exterior mantiene una estructura sólida
-                fontSize = Math.floor(12 + (Math.random() * 3));
-            }
+            // Tamaño uniforme y legible, sutilmente más pequeños al interior
+            const fontSize = Math.floor(12 + (scaleFactor * 3) + (Math.random() * 2));
             wordElement.style.fontSize = `${fontSize}px`;
 
-            // Paleta de colores neón personalizados
-            const centerColors = ['#ff0a54', '#ff477e', '#ff7096', '#ff85a1', '#f72585'];
-            const borderColors = ['#ff4d6d', '#ff758f', '#c9184a', '#ff0a54'];
-            
-            wordElement.style.color = isCenter 
-                ? centerColors[Math.floor(Math.random() * centerColors.length)]
-                : borderColors[Math.floor(Math.random() * borderColors.length)];
+            // Gama de colores rosa/rojo neón elegantes
+            const colors = ['#ff4d6d', '#ff758f', '#ff0a54', '#ff477e', '#ff85a1'];
+            wordElement.style.color = colors[Math.floor(Math.random() * colors.length)];
 
             heartContainer.appendChild(wordElement);
         }
 
-        function generateCustomHeart() {
+        function generateMinimalHeart() {
             const width = window.innerWidth;
             const height = window.innerHeight;
             const centerX = width / 2;
             const centerY = height / 2 - 20;
             const baseScale = Math.min(width, height) * 0.022;
 
-            // 1. GENERAR EL RELLENO INTERIOR CON "ARIANA"
+            // 1. Relleno interior espaciado (Ariana)
             for (let i = 0; i < FILL_COUNT; i++) {
-                // Ángulo aleatorio uniforme
                 const t = Math.random() * Math.PI * 2;
                 const coords = getHeartCoords(t);
 
-                // Forzamos el esparcimiento hacia el interior usando multiplicadores fraccionales (r < 1)
-                // Usamos una distribución matemática que evita la acumulación excesiva y expande los textos
-                const r = Math.pow(Math.random(), 0.65) * 0.88; 
+                // El radio 'r' las distribuye hacia adentro sin amontonarse
+                const r = Math.random() * 0.85; 
                 
                 const posX = centerX + coords.x * baseScale * r;
                 const posY = centerY - coords.y * baseScale * r;
 
-                createFloatingText("Ariana", posX, posY, true, r);
+                createFloatingText(posX, posY, r);
             }
 
-            // 2. GENERAR EL BORDE DE LA SILUETA CON "I LOVE YOU"
+            // 2. Silueta exterior definida (Ariana)
             for (let i = 0; i < BORDER_COUNT; i++) {
                 const t = Math.PI * 2 * (i / BORDER_COUNT);
                 const coords = getHeartCoords(t);
 
-                // Posición exacta en la línea del contorno exterior (r = 1.0)
                 const posX = centerX + coords.x * baseScale;
                 const posY = centerY - coords.y * baseScale;
 
-                createFloatingText("I love you", posX, posY, false, 1.0);
+                createFloatingText(posX, posY, 1.0);
             }
         }
 
-        // Ajuste responsivo de pantalla
+        // Ajuste en caso de cambiar tamaño de pantalla
         window.addEventListener('resize', () => {
             if(heartContainer.style.display === 'block') {
                 heartContainer.innerHTML = '';
-                generateCustomHeart();
+                generateMinimalHeart();
             }
         });
     </script>
